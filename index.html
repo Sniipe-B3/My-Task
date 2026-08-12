@@ -4,14 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>OS de Vie</title>
+    <!-- Tailwind pour le design -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide pour les icônes -->
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Polyfill OBLIGATOIRE pour faire marcher le Glisser-Déposer avec le doigt sur Smartphone -->
+    <script src="https://bernardo-castilho.github.io/DragDropTouch/DragDropTouch.js"></script>
     <style>
         ::-webkit-scrollbar { width: 0px; background: transparent; }
         body { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
         .draggable-item { cursor: grab; transition: transform 0.2s ease, background-color 0.2s ease; }
         .draggable-item:active { cursor: grabbing; }
-        .dragging { opacity: 0.4; background: #1f2937; transform: scale(1.02); }
+        .dragging { opacity: 0.4; background: #13161c; transform: scale(1.02); }
         .drag-over { border-top: 2px dashed #06b6d4 !important; }
     </style>
 </head>
@@ -77,8 +81,7 @@
                 AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId||null,duration:parseInt(duration),energy,deadline:'',status:'todo',subtasks:[]});
                 this.save();
             },
-            addProjectTask(projectId, event){
-                if(event) event.preventDefault();
+            addProjectTask(projectId){
                 const input = document.getElementById(`project-quick-task-${projectId}`);
                 if(!input) return;
                 const name = input.value;
@@ -87,15 +90,14 @@
                 AppState.showProjectAddTaskModal = null;
                 this.save();
             },
-            addSubtask(taskId, event){
-                if(event) event.preventDefault();
+            addSubtask(taskId){
                 const input = document.getElementById(`task-quick-subtask-${taskId}`);
                 if(!input) return;
                 const name = input.value;
                 if(!name.trim())return;
                 AppState.tasks = AppState.tasks.map(t => {
                     if(t.id === taskId) {
-                        return {...t, subtasks: [...t.subtasks, {id: Date.now().toString(), name, status: 'todo'}]};
+                        return {...t, subtasks: [...(t.subtasks||[]), {id: Date.now().toString(), name, status: 'todo'}]};
                     }
                     return t;
                 });
@@ -173,7 +175,7 @@
 
             renderTask(task, minimal=false){
                 const isDone=task.status==='done';
-                const energyColors={'Haute':'text-purple-400','Moyenne':'text-cyan-400','Basse':'text-gray-500'};
+                const energyColors={'Haute':'text-cyan-400','Moyenne':'text-cyan-400','Basse':'text-gray-500'};
                 return `
                 <div draggable="true" 
                      ondragstart="App.handleDragStart(event, '${task.id}', 'task')" 
@@ -260,10 +262,10 @@
                             </div>
 
                             ${AppState.showProjectAddTaskModal === project.id ? `
-                                <form onsubmit="App.addProjectTask('${project.id}', event)" class="mb-3 flex gap-2 bg-[#0D0F12] p-2 rounded-xl border border-gray-800" onclick="event.stopPropagation()">
-                                    <input type="text" id="project-quick-task-${project.id}" placeholder="Nouvelle tâche..." class="flex-1 bg-transparent px-2 text-sm text-white focus:outline-none" autofocus>
-                                    <button type="submit" class="bg-cyan-500 text-black px-3 py-1 rounded-lg text-xs font-bold">Ajouter</button>
-                                </form>
+                                <div class="mb-3 flex gap-2 bg-[#0D0F12] p-2 rounded-xl border border-gray-800" onclick="event.stopPropagation()">
+                                    <input type="text" id="project-quick-task-${project.id}" onkeydown="if(event.key==='Enter') App.addProjectTask('${project.id}')" placeholder="Nouvelle tâche..." class="flex-1 bg-transparent px-2 text-sm text-white focus:outline-none" autofocus>
+                                    <button type="button" onclick="App.addProjectTask('${project.id}')" class="bg-cyan-500 text-black px-3 py-1 rounded-lg text-xs font-bold">Ajouter</button>
+                                </div>
                             `:''}
 
                             ${projectTasks.length===0?'<p class="text-sm text-gray-500 text-center py-2">Aucune tâche.</p>':projectTasks.map(task=>`
@@ -271,10 +273,10 @@
                                     ${this.renderTask(task,true)}
                                     
                                     ${AppState.showProjectAddSubtaskModal === task.id ? `
-                                        <form onsubmit="App.addSubtask('${task.id}', event)" class="ml-8 mb-2 flex gap-2 bg-[#0D0F12] p-2 rounded-xl border border-gray-800" onclick="event.stopPropagation()">
-                                            <input type="text" id="task-quick-subtask-${task.id}" placeholder="Nouvelle sous-tâche..." class="flex-1 bg-transparent px-2 text-sm text-white focus:outline-none" autofocus>
-                                            <button type="submit" class="bg-cyan-500 text-black px-3 py-1 rounded-lg text-xs font-bold">OK</button>
-                                        </form>
+                                        <div class="ml-8 mb-2 flex gap-2 bg-[#0D0F12] p-2 rounded-xl border border-gray-800" onclick="event.stopPropagation()">
+                                            <input type="text" id="task-quick-subtask-${task.id}" onkeydown="if(event.key==='Enter') App.addSubtask('${task.id}')" placeholder="Nouvelle sous-tâche..." class="flex-1 bg-transparent px-2 text-sm text-white focus:outline-none" autofocus>
+                                            <button type="button" onclick="App.addSubtask('${task.id}')" class="bg-cyan-500 text-black px-3 py-1 rounded-lg text-xs font-bold">OK</button>
+                                        </div>
                                     `:''}
 
                                     ${task.subtasks&&task.subtasks.length>0?`<div class="ml-8 space-y-1 border-l border-gray-800 pl-3">${task.subtasks.map(sub=>`
