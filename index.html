@@ -236,7 +236,7 @@
                 if(!name.trim())return;
                 AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId||null,duration:parseInt(duration),locations,priority,deadline:'',status:'todo',subtasks:[]});
                 
-                // Reset form inputs (optional but good for UX)
+                // Reset form inputs
                 document.getElementById('new-task-name').value = '';
                 
                 this.save();
@@ -288,10 +288,7 @@
                     if(t.status==='done') return false;
                     if(t.duration > AppState.homeTime) return false;
                     
-                    // Si un ou plusieurs filtres de lieux sont actifs
                     if(AppState.homeLocations.length > 0) {
-                        // Si la tâche n'a aucun lieu, on ne l'affiche pas OU on la passe ?
-                        // Option choisie : la tâche doit avoir au moins un lieu en commun avec la sélection
                         if (!t.locations || t.locations.length === 0) return false;
                         const match = t.locations.some(l => AppState.homeLocations.includes(l));
                         if(!match) return false;
@@ -369,9 +366,11 @@
                      ondragover="App.handleDragOver(event)" 
                      ondragleave="App.handleDragLeave(event)" 
                      ondrop="App.handleDrop(event, '${task.id}', 'task')"
-                     class="draggable-item group flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all duration-300 border ${isDone?'bg-[#13161c] border-gray-800/30 opacity-60':'bg-[#1A1D24] border-gray-800 hover:border-gray-700'}">
-                    <div class="flex items-center gap-4 overflow-hidden flex-1" onclick="App.toggleTask('${task.id}')">
-                        ${isDone?'<i data-lucide="check-circle-2" class="text-emerald-500 shrink-0"></i>':'<i data-lucide="circle" class="text-gray-600 shrink-0"></i>'}
+                     class="draggable-item group flex items-center justify-between p-4 rounded-2xl cursor-grab transition-all duration-300 border ${isDone?'bg-[#13161c] border-gray-800/30 opacity-60':'bg-[#1A1D24] border-gray-800 hover:border-gray-700'}">
+                    <div class="flex items-center gap-4 overflow-hidden flex-1">
+                        <button onclick="App.toggleTask('${task.id}'); event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer p-1 -ml-1">
+                            ${isDone?'<i data-lucide="check-circle-2" class="text-emerald-500"></i>':'<i data-lucide="circle" class="text-gray-600"></i>'}
+                        </button>
                         <div class="flex-1 min-w-0">
                             <h4 class="font-bold truncate text-[15px] ${isDone?'text-gray-500 line-through':'text-gray-200'}">${task.name}</h4>
                             <div class="flex items-center gap-3 mt-1 text-xs font-semibold text-gray-500 flex-wrap">
@@ -509,8 +508,10 @@
                                              ondragleave="App.handleDragLeave(event)" 
                                              ondrop="App.handleDrop(event, '${sub.id}', 'subtask', '${task.id}')"
                                              class="draggable-item flex items-center justify-between py-2 px-2.5 rounded-lg bg-[#13161c] border border-gray-800/40 hover:bg-[#1A1D24] transition-colors">
-                                            <div class="flex items-center gap-2 cursor-pointer flex-1 min-w-0" onclick="App.toggleSubtask('${task.id}','${sub.id}')">
-                                                <i data-lucide="${sub.status==='done'?'check-circle-2':'circle'}" class="${sub.status==='done'?'text-emerald-500':'text-gray-600'} w-3.5 h-3.5 shrink-0"></i>
+                                            <div class="flex items-center gap-2 flex-1 min-w-0">
+                                                <button onclick="App.toggleSubtask('${task.id}','${sub.id}'); event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer p-1 -ml-1">
+                                                    <i data-lucide="${sub.status==='done'?'check-circle-2':'circle'}" class="${sub.status==='done'?'text-emerald-500':'text-gray-600'} w-3.5 h-3.5"></i>
+                                                </button>
                                                 <div class="flex-1 min-w-0">
                                                     <span class="text-sm truncate block ${sub.status==='done'?'text-gray-600 line-through':'text-gray-300'}">${sub.name}</span>
                                                     <div class="flex items-center gap-2 mt-0.5 text-[10px] text-gray-500">
@@ -531,7 +532,7 @@
                 }).join('');
                 return html+'</div>';
             },
-            
+
             renderBank(){
                 const filteredTasks = AppState.tasks.filter(t => {
                     if(AppState.bankFilter === 'isolated' && (t.projectId !== null || t.status === 'done')) return false;
@@ -563,8 +564,10 @@
                                     const isSubDone = sub.status === 'done';
                                     bankListHtml += `
                                     <div class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-800/50 hover:border-gray-700 transition-all ${isSubDone ? 'opacity-60' : ''}">
-                                        <div class="flex items-center gap-3 flex-1 min-w-0 cursor-pointer" onclick="App.toggleSubtask('${task.id}','${sub.id}')">
-                                            <i data-lucide="${isSubDone ? 'check-circle-2' : 'circle'}" class="${isSubDone ? 'text-emerald-500' : 'text-gray-600'} w-4 h-4 shrink-0"></i>
+                                        <div class="flex items-center gap-3 flex-1 min-w-0">
+                                            <button onclick="App.toggleSubtask('${task.id}','${sub.id}'); event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer p-1 -ml-1">
+                                                <i data-lucide="${isSubDone ? 'check-circle-2' : 'circle'}" class="${isSubDone ? 'text-emerald-500' : 'text-gray-600'} w-4 h-4"></i>
+                                            </button>
                                             <div class="flex-1 min-w-0">
                                                 <div class="text-sm ${isSubDone ? 'text-gray-600 line-through' : 'text-gray-300'} font-medium truncate">${sub.name}</div>
                                                 <div class="flex items-center gap-2 mt-1 text-[11px] text-gray-500 flex-wrap">
