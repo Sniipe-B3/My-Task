@@ -269,3 +269,86 @@
                                     ${AppState.showProjectAddSubtaskModal === task.id ? `
                                         <div class="ml-8 mb-2 flex gap-2 bg-[#0D0F12] p-2 rounded-xl border border-gray-800">
                                             <input type="text" id="task-quick-subtask-${task.id}"
+                                            <button onclick="App.addSubtask('${task.id}')" class="bg-purple-500 text-white px-3 py-1 rounded-lg text-xs font-bold">OK</button>
+                                        </div>
+                                    `:''}
+
+                                    ${task.subtasks&&task.subtasks.length>0?`<div class="ml-8 space-y-1 border-l border-gray-800 pl-3">${task.subtasks.map(sub=>`
+                                        <div draggable="true" 
+                                             ondragstart="App.handleDragStart(event, '${sub.id}', 'subtask', '${task.id}')" 
+                                             ondragend="App.handleDragEnd(event)" 
+                                             ondragover="App.handleDragOver(event)" 
+                                             ondragleave="App.handleDragLeave(event)" 
+                                             ondrop="App.handleDrop(event, '${sub.id}', 'subtask', '${task.id}')"
+                                             onclick="App.toggleSubtask('${task.id}','${sub.id}')" class="draggable-item flex items-center gap-2 cursor-pointer py-1.5 px-2 rounded-lg hover:bg-[#1A1D24]">
+                                            <i data-lucide="${sub.status==='done'?'check-circle-2':'circle'}" class="${sub.status==='done'?'text-emerald-500':'text-gray-600'} w-3.5 h-3.5"></i>
+                                            <span class="text-sm ${sub.status==='done'?'text-gray-600 line-through':'text-gray-300'}">${sub.name}</span>
+                                        </div>`).join('')}</div>`:''}
+                                </div>
+                            `).join('')}
+                        </div>`:''}
+                    </div>`;
+                }).join('');
+                return html+'</div>';
+            },
+            renderBank(){
+                const filtered=AppState.tasks.filter(t=>{if(AppState.bankFilter==='isolated')return t.projectId===null&&t.status!=='done';return t.status!=='done'});
+                return `
+                <div class="space-y-6">
+                    <section class="bg-gradient-to-br from-[#1A1D24] to-[#13161c] rounded-3xl p-5 border border-gray-800">
+                        <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2"><i data-lucide="plus" class="text-emerald-400 w-4 h-4"></i> Ajout Rapide</h2>
+                        <form onsubmit="App.addTask(event)" class="space-y-4">
+                            <input type="text" id="new-task-name" placeholder="Que faut-il faire ?" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800">
+                            <div class="flex gap-2">
+                                <select id="new-task-project" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800">
+                                    <option value="">Projet : Aucun</option>
+                                    ${AppState.projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}
+                                </select>
+                                <select id="new-task-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center">
+                                    <option value="15">15m</option><option value="30">30m</option><option value="60">1h</option>
+                                </select>
+                            </div>
+                            <div class="flex gap-2">${['Basse','Moyenne','Haute'].map(e=>`<button type="button" onclick="App.selectBankEnergy(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${e==='Basse'?'energy-btn-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50':'bg-[#0D0F12] text-gray-500 border border-transparent'}">${e}</button>`).join('')}</div>
+                            <button type="submit" class="w-full py-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/50 font-bold uppercase hover:bg-emerald-500 hover:text-black">Ajouter</button>
+                        </form>
+                    </section>
+                    <section>
+                        <div class="flex justify-between items-end mb-4 px-1">
+                            <h2 class="text-xl font-black text-white">Toutes les tâches</h2>
+                            <div class="flex gap-2">
+                                <button onclick="App.setBankFilter('all')" class="text-xs px-3 py-1 rounded-full font-bold ${AppState.bankFilter==='all'?'bg-gray-700 text-white':'bg-[#1A1D24] text-gray-500'}">Toutes</button>
+                                <button onclick="App.setBankFilter('isolated')" class="text-xs px-3 py-1 rounded-full font-bold ${AppState.bankFilter==='isolated'?'bg-gray-700 text-white':'bg-[#1A1D24] text-gray-500'}">Isolées</button>
+                            </div>
+                        </div>
+                        <div class="space-y-2 pb-10">${filtered.length>0?filtered.map(t=>this.renderTask(t)).join(''):'<p class="text-center text-gray-500 text-sm py-8">Aucune tâche.</p>'}</div>
+                    </section>
+                </div>`;
+            },
+            selectBankEnergy(btn){
+                const btns=btn.parentElement.querySelectorAll('button');
+                btns.forEach(b=>{b.classList.remove('energy-btn-selected','bg-emerald-500/20','text-emerald-400','border-emerald-500/50');b.classList.add('bg-[#0D0F12]','text-gray-500','border-transparent')});
+                btn.classList.add('energy-btn-selected','bg-emerald-500/20','text-emerald-400','border-emerald-500/50');
+                btn.classList.remove('bg-[#0D0F12]','text-gray-500','border-transparent');
+            },
+            render(){
+                const content=document.getElementById('app-content');
+                if(AppState.activeTab==='home')content.innerHTML=this.renderHome();
+                else if(AppState.activeTab==='projects')content.innerHTML=this.renderProjects();
+                else if(AppState.activeTab==='bank')content.innerHTML=this.renderBank();
+                
+                const tabs=[{id:'home',color:'text-cyan-400'},{id:'projects',color:'text-purple-500'},{id:'bank',color:'text-emerald-400'}];
+                tabs.forEach(tab=>{
+                    const btn=document.getElementById('nav-'+tab.id);
+                    if(btn)btn.className=`flex flex-col items-center gap-1 transition-all ${AppState.activeTab===tab.id?tab.color:'text-gray-500'}`;
+                });
+                lucide.createIcons();
+            },
+            init(){
+                document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-6 py-4 flex justify-between items-center z-20 pb-8"><button onclick="App.setTab('home')" id="nav-home" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="home"></i><span class="text-[10px] font-bold tracking-wider uppercase">Action</span></button><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[10px] font-bold tracking-wider uppercase">Projets</span></button><button onclick="App.setTab('bank')" id="nav-bank" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="list-todo"></i><span class="text-[10px] font-bold tracking-wider uppercase">Banque</span></button></nav>`);
+                this.render();
+            }
+        };
+        window.onload = () => App.init();
+    </script>
+</body>
+</html>
