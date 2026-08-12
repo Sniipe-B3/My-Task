@@ -34,25 +34,22 @@
     </div>
     
     <script>
-        const LOCATIONS = ['Maison', 'Boulot', 'Ordi', 'Jardin'];
-        
         const INITIAL_PROJECTS = [{id:'p1',name:'Poulailler',deadline:'2026-09-01'},{id:'p2',name:'Entretien Peugeot',deadline:'2026-08-20'}];
         const INITIAL_TASKS = [
-            {id:'t1',projectId:'p1',name:'Acheter le bois',deadline:'',duration:60,locations:['Boulot'],priority:'Haute',status:'done',subtasks:[]},
-            {id:'t2',projectId:'p1',name:'Monter les murs',deadline:'2026-08-15',duration:120,locations:['Jardin', 'Maison'],priority:'Moyenne',status:'todo',subtasks:[{id:'s1',name:'Découper planches',duration:30,locations:['Jardin'],priority:'Haute',status:'todo'},{id:'s2',name:'Visser',duration:45,locations:['Jardin'],priority:'Basse',status:'todo'}]},
-            {id:'t3',projectId:'p2',name:'Prendre rdv garage',deadline:'2026-08-13',duration:15,locations:['Ordi', 'Maison'],priority:'Haute',status:'todo',subtasks:[]},
-            {id:'t4',projectId:null,name:'Appeler le dentiste',deadline:'2026-08-18',duration:15,locations:['Maison', 'Boulot'],priority:'Basse',status:'todo',subtasks:[]},
-            {id:'t5',projectId:null,name:'Déclarer impôts',deadline:'2026-08-14',duration:30,locations:['Ordi'],priority:'Haute',status:'todo',subtasks:[]}
+            {id:'t1',projectId:'p1',name:'Acheter le bois',deadline:'',duration:60,locations:['Boulot'],category:'Business',priority:'Haute',status:'done',subtasks:[]},
+            {id:'t2',projectId:'p1',name:'Monter les murs',deadline:'2026-08-15',duration:120,locations:['Jardin', 'Maison'],category:'Famille',priority:'Moyenne',status:'todo',subtasks:[{id:'s1',name:'Découper planches',duration:30,locations:['Jardin'],category:'Famille',priority:'Haute',status:'todo'},{id:'s2',name:'Visser',duration:45,locations:['Jardin'],category:'Famille',priority:'Basse',status:'todo'}]},
+            {id:'t3',projectId:'p2',name:'Prendre rdv garage',deadline:'2026-08-13',duration:15,locations:['Ordi', 'Maison'],category:'Famille',priority:'Haute',status:'todo',subtasks:[]},
+            {id:'t4',projectId:null,name:'Appeler le dentiste',deadline:'2026-08-18',duration:15,locations:['Maison', 'Boulot'],category:'',priority:'Basse',status:'todo',subtasks:[]},
+            {id:'t5',projectId:null,name:'Déclarer impôts',deadline:'2026-08-14',duration:30,locations:['Ordi'],category:'Business',priority:'Haute',status:'todo',subtasks:[]}
         ];
         
-        // Migration of old tasks if they don't have 'locations' array
         const migrateTasks = (tasks) => {
             return tasks.map(t => {
-                const newTask = { ...t, locations: t.locations || [] };
-                delete newTask.energy; // Cleanup old property
+                const newTask = { ...t, locations: t.locations || [], category: t.category || '' };
+                delete newTask.energy;
                 if (newTask.subtasks) {
                     newTask.subtasks = newTask.subtasks.map(s => {
-                        const newSub = { ...s, locations: s.locations || [] };
+                        const newSub = { ...s, locations: s.locations || [], category: s.category || '' };
                         delete newSub.energy;
                         return newSub;
                     });
@@ -63,6 +60,11 @@
 
         const AppState = {
             activeTab:'home',
+            settings: JSON.parse(localStorage.getItem('osdevie_settings')) || {
+                times: [15, 30, 60, 120],
+                locations: ['Maison', 'Boulot', 'Ordi', 'Jardin'],
+                categories: ['Business', 'Famille']
+            },
             projects:JSON.parse(localStorage.getItem('osdevie_projects'))||INITIAL_PROJECTS,
             tasks: migrateTasks(JSON.parse(localStorage.getItem('osdevie_tasks'))||INITIAL_TASKS),
             homeTime:30,
@@ -84,10 +86,42 @@
             save(){
                 localStorage.setItem('osdevie_projects',JSON.stringify(AppState.projects));
                 localStorage.setItem('osdevie_tasks',JSON.stringify(AppState.tasks));
+                localStorage.setItem('osdevie_settings',JSON.stringify(AppState.settings));
                 this.render();
             },
             setTab(tab){AppState.activeTab=tab;this.render();},
             
+            // --- SETTINGS LOGIC ---
+            addSetting(type, inputId) {
+                const input = document.getElementById(inputId);
+                let val = input.value.trim();
+                if (!val) return;
+                
+                if (type === 'times') {
+                    val = parseInt(val);
+                    if (isNaN(val) || val <= 0) return;
+                }
+
+                if (!AppState.settings[type].includes(val)) {
+                    AppState.settings[type].push(val);
+                    if (type === 'times') AppState.settings[type].sort((a,b) => a - b);
+                    this.save();
+                }
+                input.value = '';
+            },
+            removeSetting(type, val) {
+                AppState.settings[type] = AppState.settings[type].filter(item => item !== val);
+                // Si on supprime un temps, et qu'il était sélectionné en page d'accueil
+                if (type === 'times' && AppState.homeTime === val) {
+                    AppState.homeTime = AppState.settings.times[0] || 0;
+                }
+                // Si on supprime un lieu sélectionné
+                if (type === 'locations') {
+                    AppState.homeLocations = AppState.homeLocations.filter(l => l !== val);
+                }
+                this.save();
+            },
+
             openMenu(e, type, id, parentId = null) {
                 if (e) { e.preventDefault(); e.stopPropagation(); }
                 AppState.activeMenu = { type, id, parentId };
@@ -143,18 +177,20 @@
                 } else if (type === 'task') {
                     const projectId = document.getElementById('edit-project').value || null;
                     const duration = parseInt(document.getElementById('edit-duration').value);
+                    const category = document.getElementById('edit-category').value;
                     const locations = this.getFormLocations(form);
                     const priorityBtn = form.querySelector('.edit-priority-selected');
                     const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
-                    AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, locations, priority } : t);
+                    AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, locations, category, priority } : t);
                 } else if (type === 'subtask') {
                     const duration = parseInt(document.getElementById('edit-sub-duration').value);
+                    const category = document.getElementById('edit-sub-category').value;
                     const locations = this.getFormLocations(form);
                     const priorityBtn = form.querySelector('.edit-sub-priority-selected');
                     const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
                     AppState.tasks = AppState.tasks.map(t => {
                         if (t.id === parentId) {
-                            return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, locations, priority } : s) };
+                            return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, locations, category, priority } : s) };
                         }
                         return t;
                     });
@@ -229,16 +265,15 @@
                 const name = document.getElementById('new-task-name').value;
                 const projectId = document.getElementById('new-task-project').value;
                 const duration = document.getElementById('new-task-duration').value;
+                const category = document.getElementById('new-task-category').value;
                 const locations = this.getFormLocations(form);
                 const priorityBtn = form.querySelector('.priority-btn-selected');
                 const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
                 
                 if(!name.trim())return;
-                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId||null,duration:parseInt(duration),locations,priority,deadline:'',status:'todo',subtasks:[]});
+                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId||null,duration:parseInt(duration),locations,category,priority,deadline:'',status:'todo',subtasks:[]});
                 
-                // Reset form inputs
                 document.getElementById('new-task-name').value = '';
-                
                 this.save();
             },
             addProjectTask(projectId){
@@ -246,7 +281,7 @@
                 if(!input) return;
                 const name = input.value;
                 if(!name.trim())return;
-                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId,duration:15,locations:[],priority:'Moyenne',deadline:'',status:'todo',subtasks:[]});
+                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId,duration:15,locations:[],category:'',priority:'Moyenne',deadline:'',status:'todo',subtasks:[]});
                 AppState.showProjectAddTaskModal = null;
                 this.save();
             },
@@ -257,7 +292,7 @@
                 if(!name.trim())return;
                 AppState.tasks = AppState.tasks.map(t => {
                     if(t.id === taskId) {
-                        return {...t, subtasks: [...(t.subtasks||[]), {id: Date.now().toString(), name, duration: 15, locations: [], priority: 'Moyenne', status: 'todo'}]};
+                        return {...t, subtasks: [...(t.subtasks||[]), {id: Date.now().toString(), name, duration: 15, locations: [], category: '', priority: 'Moyenne', status: 'todo'}]};
                     }
                     return t;
                 });
@@ -338,9 +373,9 @@
                     } else if (type === 'subtask' && data.parentId === parentId) {
                         AppState.tasks = AppState.tasks.map(t => {
                             if (t.id === parentId) {
-                                const subs = [...t.subtasks];
+                                const subs = [...t.subtasks]; 
                                 const oldIndex = subs.findIndex(s => s.id === data.id);
-                                const newIndex = subs.findIndex(s => s.id === targetId);
+                                const newIndex = subs.findIndex(s => s.id ===targetId);
                                 if (oldIndex !== -1 && newIndex !== -1) {
                                     const [moved] = subs.splice(oldIndex, 1);
                                     subs.splice(newIndex, 0, moved);
@@ -373,9 +408,10 @@
                         </button>
                         <div class="flex-1 min-w-0">
                             <h4 class="font-bold truncate text-[15px] ${isDone?'text-gray-500 line-through':'text-gray-200'}">${task.name}</h4>
-                            <div class="flex items-center gap-3 mt-1 text-xs font-semibold text-gray-500 flex-wrap">
+                            <div class="flex items-center gap-2 mt-1 text-xs font-semibold text-gray-500 flex-wrap">
                                 <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ${task.duration}m</span>
                                 ${hasLocations ? `<span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3 text-emerald-400"></i> ${task.locations.join(', ')}</span>` : ''}
+                                ${task.category ? `<span class="px-1.5 py-0.5 rounded text-[10px] border border-gray-700 bg-gray-800 text-gray-300">${task.category}</span>` : ''}
                                 <span class="px-2 py-0.5 rounded-md text-[10px] border font-bold ${priorityColors[task.priority || 'Moyenne']}">${task.priority || 'Moyenne'}</span>
                             </div>
                         </div>
@@ -408,6 +444,27 @@
                     return scoreA - scoreB;
                 }).slice(0, 5);
 
+                const categoryStats = AppState.settings.categories.map(cat => {
+                    let total = 0;
+                    let done = 0;
+                    AppState.tasks.forEach(t => {
+                        if (t.category === cat) {
+                            total++;
+                            if (t.status === 'done') done++;
+                        }
+                        if (t.subtasks) {
+                            t.subtasks.forEach(s => {
+                                if (s.category === cat) {
+                                    total++;
+                                    if (s.status === 'done') done++;
+                                }
+                            });
+                        }
+                    });
+                    const percent = total === 0 ? 0 : Math.round((done / total) * 100);
+                    return { cat, total, done, percent };
+                });
+
                 return `
                 <div class="space-y-8">
                     <section class="bg-[#1A1D24] rounded-3xl p-5 border border-gray-800/50 relative">
@@ -415,7 +472,7 @@
                         <h2 class="text-lg font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="play" class="text-cyan-400 fill-cyan-400 w-5 h-5"></i> Moteur d'Action</h2>
                         <div class="space-y-4">
                             <div><label class="text-xs font-semibold text-gray-400 uppercase mb-2 block">Temps dispo (min)</label>
-                                <div class="flex gap-2">${[15,30,60,120].map(t=>`<button onclick="App.setHomeTime(${t})" class="flex-1 py-2 rounded-xl text-sm font-bold ${AppState.homeTime===t?'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50':'bg-[#0D0F12] text-gray-400 border border-transparent'}">${t}${t===120?'+':''}</button>`).join('')}</div>
+                                <div class="flex gap-2 flex-wrap">${AppState.settings.times.map(t=>`<button onclick="App.setHomeTime(${t})" class="flex-1 min-w-[50px] py-2 rounded-xl text-sm font-bold ${AppState.homeTime===t?'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50':'bg-[#0D0F12] text-gray-400 border border-transparent'}">${t}</button>`).join('')}</div>
                             </div>
                             <div>
                                 <label class="text-xs font-semibold text-gray-400 uppercase mb-2 flex items-center justify-between">
@@ -423,16 +480,36 @@
                                     <span class="text-[10px] text-gray-500 font-normal">Vide = Partout</span>
                                 </label>
                                 <div class="flex gap-2 flex-wrap">
-                                    ${LOCATIONS.map(l=>`<button onclick="App.toggleHomeLocation('${l}')" class="flex-1 min-w-[70px] py-2 rounded-xl text-sm font-bold ${AppState.homeLocations.includes(l)?'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50':'bg-[#0D0F12] text-gray-400 border border-transparent'}">${l}</button>`).join('')}
+                                    ${AppState.settings.locations.map(l=>`<button onclick="App.toggleHomeLocation('${l}')" class="flex-1 min-w-[70px] py-2 rounded-xl text-sm font-bold ${AppState.homeLocations.includes(l)?'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50':'bg-[#0D0F12] text-gray-400 border border-transparent'}">${l}</button>`).join('')}
                                 </div>
                             </div>
                             <button onclick="App.generateAction()" class="w-full py-4 mt-2 rounded-xl bg-cyan-500 text-black font-black text-lg uppercase transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)]">Trouver quoi faire</button>
                         </div>
                         ${AppState.homeSearched?`<div class="mt-6 pt-4 border-t border-gray-800"><h3 class="text-xs font-bold text-gray-500 mb-3 uppercase">Résultats triés par priorité (${AppState.homeSuggestions.length})</h3>${AppState.homeSuggestions.length>0?`<div class="space-y-2">${AppState.homeSuggestions.map(t=>this.renderTask(t)).join('')}</div>`:`<p class="text-sm text-gray-500 text-center py-4">Aucune tâche ne correspond.</p>`}</div>`:''}
                     </section>
+                    
                     <section>
-                        <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2"><i data-lucide="alert-circle" class="text-emerald-400 w-4 h-4"></i> Urgences & Rapides (Le + urgent & rapide)</h2>
+                    <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2"><i data-lucide="alert-circle" class="text-emerald-400 w-4 h-4"></i> Urgences & Rapides (Le + urgent & rapide)</h2>
                         <div class="space-y-2">${urgencies.length>0?urgencies.map(t=>this.renderTask(t)).join(''):`<div class="bg-[#1A1D24] rounded-2xl p-6 text-center border border-gray-800 border-dashed"><p class="text-gray-500 text-sm">Tout est sous contrôle.</p></div>`}</div>
+                    </section>
+
+                    <section class="mt-8 pb-4">
+                        <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2">
+                            <i data-lucide="bar-chart-2" class="text-indigo-400 w-4 h-4"></i> Progression par Catégorie
+                        </h2>
+                        <div class="space-y-3">
+                            ${categoryStats.map(stat => `
+                                <div class="bg-[#1A1D24] rounded-2xl p-4 border border-gray-800">
+                                    <div class="flex justify-between items-end mb-2">
+                                        <span class="font-bold text-gray-200">${stat.cat}</span>
+                                        <span class="text-xs font-semibold text-gray-500">${stat.done} / ${stat.total} (${stat.percent}%)</span>
+                                    </div>
+                                    <div class="h-2 w-full bg-[#0D0F12] rounded-full overflow-hidden border border-gray-800/50">
+                                        <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000" style="width: ${stat.percent}%"></div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
                     </section>
                 </div>`;
             },
@@ -514,9 +591,10 @@
                                                 </button>
                                                 <div class="flex-1 min-w-0">
                                                     <span class="text-sm truncate block ${sub.status==='done'?'text-gray-600 line-through':'text-gray-300'}">${sub.name}</span>
-                                                    <div class="flex items-center gap-2 mt-0.5 text-[10px] text-gray-500">
+                                                    <div class="flex items-center gap-2 mt-0.5 text-[10px] text-gray-500 flex-wrap">
                                                         <span><i data-lucide="clock" class="w-2.5 h-2.5 inline"></i> ${sub.duration || 15}m</span>
                                                         ${sub.locations && sub.locations.length > 0 ? `<span><i data-lucide="map-pin" class="w-2.5 h-2.5 inline text-emerald-400"></i> ${sub.locations.join(', ')}</span>` : ''}
+                                                        ${sub.category ? `<span class="px-1.5 py-0.5 rounded text-[9px] border border-gray-700 bg-gray-800 text-gray-300">${sub.category}</span>` : ''}
                                                         <span class="px-1.5 py-0.2 rounded text-[9px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>
                                                     </div>
                                                 </div>
@@ -532,7 +610,7 @@
                 }).join('');
                 return html+'</div>';
             },
-
+            
             renderBank(){
                 const filteredTasks = AppState.tasks.filter(t => {
                     if(AppState.bankFilter === 'isolated' && (t.projectId !== null || t.status === 'done')) return false;
@@ -573,6 +651,7 @@
                                                 <div class="flex items-center gap-2 mt-1 text-[11px] text-gray-500 flex-wrap">
                                                     <span><i data-lucide="clock" class="w-3 h-3 inline"></i> ${sub.duration || 15}m</span>
                                                     ${sub.locations && sub.locations.length > 0 ? `<span><i data-lucide="map-pin" class="w-3 h-3 inline text-emerald-400"></i> ${sub.locations.join(', ')}</span>` : ''}
+                                                    ${sub.category ? `<span class="px-1.5 py-0.5 rounded text-[9px] border border-gray-700 bg-gray-800 text-gray-300">${sub.category}</span>` : ''}
                                                     <span class="px-1.5 py-0.2 rounded text-[9px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>
                                                 </div>
                                                 <div class="text-[10px] text-cyan-500/70 font-semibold flex items-center gap-1 mt-0.5 truncate">
@@ -599,17 +678,24 @@
                         <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2"><i data-lucide="plus" class="text-emerald-400 w-4 h-4"></i> Ajout Rapide</h2>
                         <form onsubmit="App.addTask(event)" class="space-y-4">
                             <input type="text" id="new-task-name" placeholder="Que faut-il faire ?" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800">
+                            
                             <div class="flex gap-2">
                                 <select id="new-task-project" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800">
                                     <option value="">Projet : Aucun</option>
                                     ${AppState.projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}
                                 </select>
                                 <select id="new-task-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center">
-                                    <option value="15">15m</option><option value="30">30m</option><option value="60">1h</option>
+                                    ${AppState.settings.times.map(t => `<option value="${t}">${t}m</option>`).join('')}
                                 </select>
                             </div>
+
+                            <select id="new-task-category" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800">
+                                <option value="">Catégorie : Aucune</option>
+                                ${AppState.settings.categories.map(c=>`<option value="${c}">${c}</option>`).join('')}
+                            </select>
+
                             <div class="flex gap-2 flex-wrap">
-                                ${LOCATIONS.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold bg-[#0D0F12] text-gray-500 border border-transparent" data-loc="${l}">${l}</button>`).join('')}
+                                ${AppState.settings.locations.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold bg-[#0D0F12] text-gray-500 border border-transparent" data-loc="${l}">${l}</button>`).join('')}
                             </div>
                             <div class="flex gap-2">
                                 ${['Basse','Moyenne','Haute'].map(p=>`<button type="button" onclick="App.selectBankPriority(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${p==='Moyenne'?'priority-btn-selected bg-purple-500/20 text-purple-400 border border-purple-500/50':'bg-[#0D0F12] text-gray-500 border border-transparent'}">Priorité : ${p}</button>`).join('')}
@@ -646,12 +732,51 @@
                 btn.classList.add('priority-btn-selected','bg-purple-500/20','text-purple-400','border-purple-500/50');
                 btn.classList.remove('bg-[#0D0F12]','text-gray-500','border-transparent');
             },
+
+            renderSettings(){
+                const renderList = (type, placeholder, isNumber) => `
+                    <div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6">
+                        <h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">
+                            ${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : 
+                              type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Lieux' : 
+                              '<i data-lucide="tag" class="text-indigo-400 w-4 h-4"></i> Catégories'}
+                        </h3>
+                        <div class="flex gap-2 mb-4">
+                            <input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800">
+                            <button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            ${AppState.settings[type].map(item => `
+                                <div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300">
+                                    <span>${item}</span>
+                                    <button onclick="App.removeSetting('${type}', ${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+
+                return `
+                <div class="space-y-4">
+                    <div class="px-1 mb-6">
+                        <h2 class="text-xl font-black text-white flex items-center gap-2">
+                            <i data-lucide="settings" class="text-gray-400"></i> Paramètres
+                        </h2>
+                        <p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p>
+                    </div>
+                    ${renderList('times', 'Ex: 45', true)}
+                    ${renderList('locations', 'Ex: Garage', false)}
+                    ${renderList('categories', 'Ex: Santé', false)}
+                </div>
+                `;
+            },
             
             render(){
                 const content=document.getElementById('app-content');
                 if(AppState.activeTab==='home')content.innerHTML=this.renderHome();
                 else if(AppState.activeTab==='projects')content.innerHTML=this.renderProjects();
                 else if(AppState.activeTab==='bank')content.innerHTML=this.renderBank();
+                else if(AppState.activeTab==='settings')content.innerHTML=this.renderSettings();
                 
                 let modalContainer = document.getElementById('modal-container');
                 if (!modalContainer) {
@@ -681,6 +806,7 @@
                 } else if (AppState.editPrompt) {
                     const d = AppState.editPrompt.data;
                     const dLocs = d.locations || [];
+                    const dCat = d.category || '';
                     
                     modalContainer.innerHTML = `
                         <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeEdit()">
@@ -696,14 +822,15 @@
                                             ${AppState.projects.map(p => `<option value="${p.id}" ${p.id === d.projectId ? 'selected' : ''}>${p.name}</option>`).join('')}
                                         </select>
                                         <select id="edit-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">
-                                            <option value="15" ${d.duration == 15 ? 'selected' : ''}>15m</option>
-                                            <option value="30" ${d.duration == 30 ? 'selected' : ''}>30m</option>
-                                            <option value="60" ${d.duration == 60 ? 'selected' : ''}>1h</option>
-                                            <option value="120" ${d.duration == 120 ? 'selected' : ''}>2h</option>
+                                            ${AppState.settings.times.map(t => `<option value="${t}" ${d.duration == t ? 'selected' : ''}>${t}m</option>`).join('')}
                                         </select>
                                     </div>
+                                    <select id="edit-category" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none">
+                                        <option value="">Catégorie : Aucune</option>
+                                        ${AppState.settings.categories.map(c => `<option value="${c}" ${c === dCat ? 'selected' : ''}>${c}</option>`).join('')}
+                                    </select>
                                     <div class="flex gap-2 flex-wrap">
-                                        ${LOCATIONS.map(l => `
+                                        ${AppState.settings.locations.map(l => `
                                             <button type="button" onclick="App.toggleFormLocation(this)" data-loc="${l}" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold ${dLocs.includes(l) ? 'loc-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${l}</button>
                                         `).join('')}
                                     </div>
@@ -717,13 +844,15 @@
                                     ${AppState.editPrompt.type === 'subtask' ? `
                                     <div class="flex gap-2">
                                         <select id="edit-sub-duration" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">
-                                            <option value="15" ${(d.duration || 15) == 15 ? 'selected' : ''}>15m</option>
-                                            <option value="30" ${(d.duration || 15) == 30 ? 'selected' : ''}>30m</option>
-                                            <option value="60" ${(d.duration || 15) == 60 ? 'selected' : ''}>1h</option>
+                                            ${AppState.settings.times.map(t => `<option value="${t}" ${(d.duration || 15) == t ? 'selected' : ''}>${t}m</option>`).join('')}
                                         </select>
                                     </div>
+                                    <select id="edit-sub-category" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none">
+                                        <option value="">Catégorie : Aucune</option>
+                                        ${AppState.settings.categories.map(c => `<option value="${c}" ${c === dCat ? 'selected' : ''}>${c}</option>`).join('')}
+                                    </select>
                                     <div class="flex gap-2 flex-wrap">
-                                        ${LOCATIONS.map(l => `
+                                        ${AppState.settings.locations.map(l => `
                                             <button type="button" onclick="App.toggleFormLocation(this)" data-loc="${l}" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold ${dLocs.includes(l) ? 'loc-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${l}</button>
                                         `).join('')}
                                     </div>
@@ -764,7 +893,7 @@
                     modalContainer.innerHTML = '';
                 }
                 
-                const tabs=[{id:'home',color:'text-cyan-400'},{id:'projects',color:'text-cyan-400'},{id:'bank',color:'text-emerald-400'}];
+                const tabs=[{id:'home',color:'text-cyan-400'},{id:'projects',color:'text-cyan-400'},{id:'bank',color:'text-emerald-400'},{id:'settings',color:'text-gray-200'}];
                 tabs.forEach(tab=>{
                     const btn=document.getElementById('nav-'+tab.id);
                     if(btn)btn.className=`flex flex-col items-center gap-1 transition-all ${AppState.activeTab===tab.id?tab.color:'text-gray-500'}`;
@@ -773,7 +902,7 @@
             },
             
             init(){
-                document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-6 py-4 flex justify-between items-center z-20 pb-8"><button onclick="App.setTab('home')" id="nav-home" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="home"></i><span class="text-[10px] font-bold tracking-wider uppercase">Action</span></button><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[10px] font-bold tracking-wider uppercase">Projets</span></button><button onclick="App.setTab('bank')" id="nav-bank" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="list-todo"></i><span class="text-[10px] font-bold tracking-wider uppercase">Banque</span></button></nav>`);
+                document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 py-4 flex justify-around items-center z-20 pb-8"><button onclick="App.setTab('home')" id="nav-home" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="home"></i><span class="text-[10px] font-bold tracking-wider uppercase">Action</span></button><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[10px] font-bold tracking-wider uppercase">Projets</span></button><button onclick="App.setTab('bank')" id="nav-bank" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="list-todo"></i><span class="text-[10px] font-bold tracking-wider uppercase">Banque</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[10px] font-bold tracking-wider uppercase">Param</span></button></nav>`);
                 this.render();
             }
         };
