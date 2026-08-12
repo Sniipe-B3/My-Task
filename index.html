@@ -77,15 +77,18 @@
                 AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId||null,duration:parseInt(duration),energy,deadline:'',status:'todo',subtasks:[]});
                 this.save();
             },
-            addProjectTask(projectId){
-                const name = document.getElementById(`project-quick-task-${projectId}`).value;
+            addProjectTask(projectId, event){
+                if(event) event.preventDefault();
+                const input = document.getElementById(`project-quick-task-${projectId}`);
+                if(!input) return;
+                const name = input.value;
                 if(!name.trim())return;
                 AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId,duration:15,energy:'Basse',deadline:'',status:'todo',subtasks:[]});
                 AppState.showProjectAddTaskModal = null;
                 this.save();
             },
             addSubtask(taskId, event){
-                if(event) event.stopPropagation();
+                if(event) event.preventDefault();
                 const input = document.getElementById(`task-quick-subtask-${taskId}`);
                 if(!input) return;
                 const name = input.value;
@@ -257,10 +260,10 @@
                             </div>
 
                             ${AppState.showProjectAddTaskModal === project.id ? `
-                                <div class="mb-3 flex gap-2 bg-[#0D0F12] p-2 rounded-xl border border-gray-800">
+                                <form onsubmit="App.addProjectTask('${project.id}', event)" class="mb-3 flex gap-2 bg-[#0D0F12] p-2 rounded-xl border border-gray-800" onclick="event.stopPropagation()">
                                     <input type="text" id="project-quick-task-${project.id}" placeholder="Nouvelle tâche..." class="flex-1 bg-transparent px-2 text-sm text-white focus:outline-none" autofocus>
-                                    <button onclick="App.addProjectTask('${project.id}')" class="bg-cyan-500 text-black px-3 py-1 rounded-lg text-xs font-bold">Ajouter</button>
-                                </div>
+                                    <button type="submit" class="bg-cyan-500 text-black px-3 py-1 rounded-lg text-xs font-bold">Ajouter</button>
+                                </form>
                             `:''}
 
                             ${projectTasks.length===0?'<p class="text-sm text-gray-500 text-center py-2">Aucune tâche.</p>':projectTasks.map(task=>`
@@ -268,10 +271,10 @@
                                     ${this.renderTask(task,true)}
                                     
                                     ${AppState.showProjectAddSubtaskModal === task.id ? `
-                                        <div class="ml-8 mb-2 flex gap-2 bg-[#0D0F12] p-2 rounded-xl border border-gray-800" onclick="event.stopPropagation()">
+                                        <form onsubmit="App.addSubtask('${task.id}', event)" class="ml-8 mb-2 flex gap-2 bg-[#0D0F12] p-2 rounded-xl border border-gray-800" onclick="event.stopPropagation()">
                                             <input type="text" id="task-quick-subtask-${task.id}" placeholder="Nouvelle sous-tâche..." class="flex-1 bg-transparent px-2 text-sm text-white focus:outline-none" autofocus>
-                                            <button type="button" onclick="App.addSubtask('${task.id}', event)" class="bg-cyan-500 text-black px-3 py-1 rounded-lg text-xs font-bold">OK</button>
-                                        </div>
+                                            <button type="submit" class="bg-cyan-500 text-black px-3 py-1 rounded-lg text-xs font-bold">OK</button>
+                                        </form>
                                     `:''}
 
                                     ${task.subtasks&&task.subtasks.length>0?`<div class="ml-8 space-y-1 border-l border-gray-800 pl-3">${task.subtasks.map(sub=>`
