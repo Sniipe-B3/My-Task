@@ -42,8 +42,8 @@
             expandedProjectId:null,
             showAddProject:false,
             bankFilter:'all',
-            showProjectAddTaskModal: null, // projectId ou null
-            showProjectAddSubtaskModal: null // taskId ou null
+            showProjectAddTaskModal: null,
+            showProjectAddSubtaskModal: null
         };
 
         const App = {
@@ -84,8 +84,11 @@
                 AppState.showProjectAddTaskModal = null;
                 this.save();
             },
-            addSubtask(taskId){
-                const name = document.getElementById(`task-quick-subtask-${taskId}`).value;
+            addSubtask(taskId, event){
+                if(event) event.stopPropagation();
+                const input = document.getElementById(`task-quick-subtask-${taskId}`);
+                if(!input) return;
+                const name = input.value;
                 if(!name.trim())return;
                 AppState.tasks = AppState.tasks.map(t => {
                     if(t.id === taskId) {
@@ -116,7 +119,6 @@
             toggleAddProject(){AppState.showAddProject=!AppState.showAddProject;this.render();},
             setBankFilter(filter){AppState.bankFilter=filter;this.render();},
             
-            // Drag and drop handlers
             handleDragStart(e, id, type, parentId = null) {
                 e.dataTransfer.setData('text/plain', JSON.stringify({id, type, parentId}));
                 e.currentTarget.classList.add('dragging');
@@ -127,8 +129,7 @@
             },
             handleDragOver(e) {
                 e.preventDefault();
-                const item = e.currentTarget;
-                item.classList.add('drag-over');
+                e.currentTarget.classList.add('drag-over');
             },
             handleDragLeave(e) {
                 e.currentTarget.classList.remove('drag-over');
@@ -138,7 +139,7 @@
                 e.currentTarget.classList.remove('drag-over');
                 try {
                     const data = JSON.parse(e.dataTransfer.getData('text/plain'));
-                    if (data.type !== type) return; // Ne trier que entre éléments de même type
+                    if (data.type !== type) return;
                     
                     if (type === 'task') {
                         const oldIndex = AppState.tasks.findIndex(t => t.id === data.id);
@@ -186,7 +187,7 @@
                         </div>
                     </div>
                     ${minimal ? `
-                        <button onclick="AppState.showProjectAddSubtaskModal = '${task.id}'; App.render();" class="p-2 text-gray-400 hover:text-purple-400" title="Ajouter une sous-tâche">
+                        <button onclick="event.stopPropagation(); AppState.showProjectAddSubtaskModal = '${task.id}'; App.render();" class="p-2 text-gray-400 hover:text-cyan-400" title="Ajouter une sous-tâche">
                             <i data-lucide="plus" class="w-4 h-4"></i>
                         </button>
                     ` : ''}
@@ -198,14 +199,14 @@
                 return `
                 <div class="space-y-8">
                     <section class="bg-[#1A1D24] rounded-3xl p-5 border border-gray-800/50 relative">
-                        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-purple-600"></div>
+                        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-emerald-500"></div>
                         <h2 class="text-lg font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="play" class="text-cyan-400 fill-cyan-400 w-5 h-5"></i> Moteur d'Action</h2>
                         <div class="space-y-4">
                             <div><label class="text-xs font-semibold text-gray-400 uppercase mb-2 block">Temps dispo (min)</label>
                                 <div class="flex gap-2">${[15,30,60,120].map(t=>`<button onclick="App.setHomeTime(${t})" class="flex-1 py-2 rounded-xl text-sm font-bold ${AppState.homeTime===t?'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50':'bg-[#0D0F12] text-gray-400 border border-transparent'}">${t}${t===120?'+':''}</button>`).join('')}</div>
                             </div>
                             <div><label class="text-xs font-semibold text-gray-400 uppercase mb-2 block">Énergie</label>
-                                <div class="flex gap-2">${['Basse','Moyenne','Haute'].map(e=>`<button onclick="App.setHomeEnergy('${e}')" class="flex-1 py-2 rounded-xl text-sm font-bold ${AppState.homeEnergy===e?'bg-purple-500/20 text-purple-400 border border-purple-500/50':'bg-[#0D0F12] text-gray-400 border border-transparent'}">${e}</button>`).join('')}</div>
+                                <div class="flex gap-2">${['Basse','Moyenne','Haute'].map(e=>`<button onclick="App.setHomeEnergy('${e}')" class="flex-1 py-2 rounded-xl text-sm font-bold ${AppState.homeEnergy===e?'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50':'bg-[#0D0F12] text-gray-400 border border-transparent'}">${e}</button>`).join('')}</div>
                             </div>
                             <button onclick="App.generateAction()" class="w-full py-4 mt-2 rounded-xl bg-cyan-500 text-black font-black text-lg uppercase transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)]">Trouver quoi faire</button>
                         </div>
@@ -218,8 +219,8 @@
                 </div>`;
             },
             renderProjects(){
-                let html=`<div class="space-y-4"><div class="flex justify-between items-center mb-6 px-1"><h2 class="text-xl font-black text-white">Grands Chantiers</h2><button onclick="App.toggleAddProject()" class="h-8 w-8 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center border border-purple-500/30"><i data-lucide="plus" class="w-4 h-4"></i></button></div>`;
-                if(AppState.showAddProject)html+=`<div class="bg-[#1A1D24] p-4 rounded-2xl border border-purple-500/30 mb-4 flex gap-2"><input type="text" id="new-proj-name" placeholder="Nom du projet..." class="flex-1 bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addProject()" class="bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-bold">OK</button></div>`;
+                let html=`<div class="space-y-4"><div class="flex justify-between items-center mb-6 px-1"><h2 class="text-xl font-black text-white">Grands Chantiers</h2><button onclick="App.toggleAddProject()" class="h-8 w-8 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center border border-cyan-500/30"><i data-lucide="plus" class="w-4 h-4"></i></button></div>`;
+                if(AppState.showAddProject)html+=`<div class="bg-[#1A1D24] p-4 rounded-2xl border border-cyan-500/30 mb-4 flex gap-2"><input type="text" id="new-proj-name" placeholder="Nom du projet..." class="flex-1 bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addProject()" class="bg-cyan-500 text-black px-4 py-2 rounded-lg text-sm font-bold">OK</button></div>`;
                 
                 html+=AppState.projects.map(project=>{
                     const projectTasks=AppState.tasks.filter(t=>t.projectId===project.id);
@@ -236,13 +237,13 @@
                         <div onclick="App.toggleProjectExpand('${project.id}')" class="p-5 cursor-pointer">
                             <div class="flex justify-between items-start mb-3">
                                 <div class="flex items-center gap-3">
-                                    <div class="p-2 rounded-xl ${prog===100?'bg-emerald-500/20 text-emerald-400':'bg-purple-500/20 text-purple-400'}"><i data-lucide="folder" class="w-5 h-5 fill-current opacity-50"></i></div>
+                                    <div class="p-2 rounded-xl ${prog===100?'bg-emerald-500/20 text-emerald-400':'bg-cyan-500/20 text-cyan-400'}"><i data-lucide="folder" class="w-5 h-5 fill-current opacity-50"></i></div>
                                     <div><h3 class="font-bold text-lg ${prog===100?'text-gray-400 line-through':'text-white'}">${project.name}</h3></div>
                                 </div>
                                 <i data-lucide="${exp?'chevron-down':'chevron-right'}" class="text-gray-500 w-5 h-5"></i>
                             </div>
                             <div class="mt-4 flex items-center gap-3">
-                                <div class="h-2 w-full bg-[#0D0F12] rounded-full overflow-hidden border border-gray-800/50"><div class="h-full rounded-full transition-all duration-1000 ${prog===100?'bg-emerald-400':'bg-gradient-to-r from-purple-600 to-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.5)]'}" style="width:${prog}%"></div></div>
+                                <div class="h-2 w-full bg-[#0D0F12] rounded-full overflow-hidden border border-gray-800/50"><div class="h-full rounded-full transition-all duration-1000 ${prog===100?'bg-emerald-400':'bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.5)]'}" style="width:${prog}%"></div></div>
                                 <span class="text-xs font-bold text-gray-400 w-8 text-right">${prog}%</span>
                             </div>
                         </div>
@@ -250,7 +251,7 @@
                         ${exp?`<div class="px-5 pb-5 border-t border-gray-800/50 pt-4 bg-[#13161c]">
                             <div class="flex justify-between items-center mb-3">
                                 <span class="text-xs font-bold text-gray-400 uppercase">Tâches du projet</span>
-                                <button onclick="AppState.showProjectAddTaskModal = '${project.id}'; App.render();" class="flex items-center gap-1 text-xs text-purple-400 bg-purple-500/10 px-2.5 py-1 rounded-lg border border-purple-500/30">
+                                <button onclick="AppState.showProjectAddTaskModal = '${project.id}'; App.render();" class="flex items-center gap-1 text-xs text-cyan-400 bg-cyan-500/10 px-2.5 py-1 rounded-lg border border-cyan-500/30">
                                     <i data-lucide="plus" class="w-3.5 h-3.5"></i> Ajouter tâche
                                 </button>
                             </div>
@@ -258,7 +259,7 @@
                             ${AppState.showProjectAddTaskModal === project.id ? `
                                 <div class="mb-3 flex gap-2 bg-[#0D0F12] p-2 rounded-xl border border-gray-800">
                                     <input type="text" id="project-quick-task-${project.id}" placeholder="Nouvelle tâche..." class="flex-1 bg-transparent px-2 text-sm text-white focus:outline-none" autofocus>
-                                    <button onclick="App.addProjectTask('${project.id}')" class="bg-purple-500 text-white px-3 py-1 rounded-lg text-xs font-bold">Ajouter</button>
+                                    <button onclick="App.addProjectTask('${project.id}')" class="bg-cyan-500 text-black px-3 py-1 rounded-lg text-xs font-bold">Ajouter</button>
                                 </div>
                             `:''}
 
@@ -267,9 +268,9 @@
                                     ${this.renderTask(task,true)}
                                     
                                     ${AppState.showProjectAddSubtaskModal === task.id ? `
-                                        <div class="ml-8 mb-2 flex gap-2 bg-[#0D0F12] p-2 rounded-xl border border-gray-800">
-                                            <input type="text" id="task-quick-subtask-${task.id}"
-                                            <button onclick="App.addSubtask('${task.id}')" class="bg-purple-500 text-white px-3 py-1 rounded-lg text-xs font-bold">OK</button>
+                                        <div class="ml-8 mb-2 flex gap-2 bg-[#0D0F12] p-2 rounded-xl border border-gray-800" onclick="event.stopPropagation()">
+                                            <input type="text" id="task-quick-subtask-${task.id}" placeholder="Nouvelle sous-tâche..." class="flex-1 bg-transparent px-2 text-sm text-white focus:outline-none" autofocus>
+                                            <button type="button" onclick="App.addSubtask('${task.id}', event)" class="bg-cyan-500 text-black px-3 py-1 rounded-lg text-xs font-bold">OK</button>
                                         </div>
                                     `:''}
 
@@ -308,7 +309,7 @@
                                     <option value="15">15m</option><option value="30">30m</option><option value="60">1h</option>
                                 </select>
                             </div>
-                            <div class="flex gap-2">${['Basse','Moyenne','Haute'].map(e=>`<button type="button" onclick="App.selectBankEnergy(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${e==='Basse'?'energy-btn-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50':'bg-[#0D0F12] text-gray-500 border border-transparent'}">${e}</button>`).join('')}</div>
+                            <div class="flex gap-2">${['Basse','Moyenne','Haute'].map(e=>`<button type="button" onclick="App.selectBankEnergy(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${e==='Basse'?'energy-btn-selected bg-cyan-500/20 text-cyan-400 border border-cyan-500/50':'bg-[#0D0F12] text-gray-500 border border-transparent'}">${e}</button>`).join('')}</div>
                             <button type="submit" class="w-full py-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/50 font-bold uppercase hover:bg-emerald-500 hover:text-black">Ajouter</button>
                         </form>
                     </section>
@@ -326,8 +327,8 @@
             },
             selectBankEnergy(btn){
                 const btns=btn.parentElement.querySelectorAll('button');
-                btns.forEach(b=>{b.classList.remove('energy-btn-selected','bg-emerald-500/20','text-emerald-400','border-emerald-500/50');b.classList.add('bg-[#0D0F12]','text-gray-500','border-transparent')});
-                btn.classList.add('energy-btn-selected','bg-emerald-500/20','text-emerald-400','border-emerald-500/50');
+                btns.forEach(b=>{b.classList.remove('energy-btn-selected','bg-cyan-500/20','text-cyan-400','border-cyan-500/50');b.classList.add('bg-[#0D0F12]','text-gray-500','border-transparent')});
+                btn.classList.add('energy-btn-selected','bg-cyan-500/20','text-cyan-400','border-cyan-500/50');
                 btn.classList.remove('bg-[#0D0F12]','text-gray-500','border-transparent');
             },
             render(){
@@ -336,7 +337,7 @@
                 else if(AppState.activeTab==='projects')content.innerHTML=this.renderProjects();
                 else if(AppState.activeTab==='bank')content.innerHTML=this.renderBank();
                 
-                const tabs=[{id:'home',color:'text-cyan-400'},{id:'projects',color:'text-purple-500'},{id:'bank',color:'text-emerald-400'}];
+                const tabs=[{id:'home',color:'text-cyan-400'},{id:'projects',color:'text-cyan-400'},{id:'bank',color:'text-emerald-400'}];
                 tabs.forEach(tab=>{
                     const btn=document.getElementById('nav-'+tab.id);
                     if(btn)btn.className=`flex flex-col items-center gap-1 transition-all ${AppState.activeTab===tab.id?tab.color:'text-gray-500'}`;
