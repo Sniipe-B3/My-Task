@@ -35,7 +35,13 @@
     
     <script>
         const INITIAL_PROJECTS = [{id:'p1',name:'Poulailler',deadline:'2026-09-01'},{id:'p2',name:'Entretien Peugeot',deadline:'2026-08-20'}];
-        const INITIAL_TASKS = [{id:'t1',projectId:'p1',name:'Acheter le bois',deadline:'',duration:60,energy:'Haute',status:'done',subtasks:[]},{id:'t2',projectId:'p1',name:'Monter les murs',deadline:'',duration:120,energy:'Haute',status:'todo',subtasks:[{id:'s1',name:'Découper planches',status:'todo'},{id:'s2',name:'Visser',status:'todo'}]},{id:'t3',projectId:'p2',name:'Prendre rdv garage',deadline:'2026-08-15',duration:15,energy:'Basse',status:'todo',subtasks:[]},{id:'t4',projectId:null,name:'Appeler le dentiste',deadline:'2026-08-13',duration:15,energy:'Basse',status:'todo',subtasks:[]},{id:'t5',projectId:null,name:'Déclarer impôts',deadline:'2026-08-14',duration:30,energy:'Haute',status:'todo',subtasks:[]}];
+        const INITIAL_TASKS = [
+            {id:'t1',projectId:'p1',name:'Acheter le bois',deadline:'',duration:60,energy:'Haute',priority:'Haute',status:'done',subtasks:[]},
+            {id:'t2',projectId:'p1',name:'Monter les murs',deadline:'2026-08-15',duration:120,energy:'Haute',priority:'Moyenne',status:'todo',subtasks:[{id:'s1',name:'Découper planches',duration:30,energy:'Moyenne',priority:'Haute',status:'todo'},{id:'s2',name:'Visser',duration:45,energy:'Basse',priority:'Basse',status:'todo'}]},
+            {id:'t3',projectId:'p2',name:'Prendre rdv garage',deadline:'2026-08-13',duration:15,energy:'Basse',priority:'Haute',status:'todo',subtasks:[]},
+            {id:'t4',projectId:null,name:'Appeler le dentiste',deadline:'2026-08-18',duration:15,energy:'Basse',priority:'Basse',status:'todo',subtasks:[]},
+            {id:'t5',projectId:null,name:'Déclarer impôts',deadline:'2026-08-14',duration:30,energy:'Haute',priority:'Haute',status:'todo',subtasks:[]}
+        ];
         
         const AppState = {
             activeTab:'home',
@@ -48,6 +54,7 @@
             expandedProjectId:null,
             showAddProject:false,
             bankFilter:'all',
+            bankPriorityFilter:'all',
             showProjectAddTaskModal: null,
             showProjectAddSubtaskModal: null,
             activeMenu: null,
@@ -102,11 +109,18 @@
                     const duration = parseInt(document.getElementById('edit-duration').value);
                     const energyBtn = document.querySelector('.edit-energy-selected');
                     const energy = energyBtn ? energyBtn.innerText.trim() : 'Basse';
-                    AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, energy } : t);
+                    const priorityBtn = document.querySelector('.edit-priority-selected');
+                    const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
+                    AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, energy, priority } : t);
                 } else if (type === 'subtask') {
+                    const duration = parseInt(document.getElementById('edit-sub-duration').value);
+                    const energyBtn = document.querySelector('.edit-sub-energy-selected');
+                    const energy = energyBtn ? energyBtn.innerText.trim() : 'Basse';
+                    const priorityBtn = document.querySelector('.edit-sub-priority-selected');
+                    const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
                     AppState.tasks = AppState.tasks.map(t => {
                         if (t.id === parentId) {
-                            return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name } : s) };
+                            return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, energy, priority } : s) };
                         }
                         return t;
                     });
@@ -121,6 +135,33 @@
                     b.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
                 });
                 btn.classList.add('edit-energy-selected', 'bg-cyan-500/20', 'text-cyan-400', 'border-cyan-500/50');
+                btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
+            },
+            selectEditPriority(btn) {
+                const btns = btn.parentElement.querySelectorAll('button');
+                btns.forEach(b => {
+                    b.classList.remove('edit-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50');
+                    b.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
+                });
+                btn.classList.add('edit-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50');
+                btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
+            },
+            selectSubEditEnergy(btn) {
+                const btns = btn.parentElement.querySelectorAll('button');
+                btns.forEach(b => {
+                    b.classList.remove('edit-sub-energy-selected', 'bg-cyan-500/20', 'text-cyan-400', 'border-cyan-500/50');
+                    b.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
+                });
+                btn.classList.add('edit-sub-energy-selected', 'bg-cyan-500/20', 'text-cyan-400', 'border-cyan-500/50');
+                btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
+            },
+            selectSubEditPriority(btn) {
+                const btns = btn.parentElement.querySelectorAll('button');
+                btns.forEach(b => {
+                    b.classList.remove('edit-sub-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50');
+                    b.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
+                });
+                btn.classList.add('edit-sub-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50');
                 btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
             },
 
@@ -173,8 +214,10 @@
                 const duration=document.getElementById('new-task-duration').value;
                 const energyBtn=document.querySelector('.energy-btn-selected');
                 const energy=energyBtn?energyBtn.innerText.trim():'Basse';
+                const priorityBtn=document.querySelector('.priority-btn-selected');
+                const priority=priorityBtn?priorityBtn.innerText.trim():'Moyenne';
                 if(!name.trim())return;
-                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId||null,duration:parseInt(duration),energy,deadline:'',status:'todo',subtasks:[]});
+                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId||null,duration:parseInt(duration),energy,priority,deadline:'',status:'todo',subtasks:[]});
                 this.save();
             },
             addProjectTask(projectId){
@@ -182,7 +225,7 @@
                 if(!input) return;
                 const name = input.value;
                 if(!name.trim())return;
-                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId,duration:15,energy:'Basse',deadline:'',status:'todo',subtasks:[]});
+                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId,duration:15,energy:'Basse',priority:'Moyenne',deadline:'',status:'todo',subtasks:[]});
                 AppState.showProjectAddTaskModal = null;
                 this.save();
             },
@@ -193,7 +236,7 @@
                 if(!name.trim())return;
                 AppState.tasks = AppState.tasks.map(t => {
                     if(t.id === taskId) {
-                        return {...t, subtasks: [...(t.subtasks||[]), {id: Date.now().toString(), name, status: 'todo'}]};
+                        return {...t, subtasks: [...(t.subtasks||[]), {id: Date.now().toString(), name, duration: 15, energy: 'Basse', priority: 'Moyenne', status: 'todo'}]};
                     }
                     return t;
                 });
@@ -211,14 +254,17 @@
             setHomeEnergy(energy){AppState.homeEnergy=energy;this.render();},
             generateAction(){
                 const energyLevels={'Basse':1,'Moyenne':2,'Haute':3};
+                const priorityWeights={'Haute':3,'Moyenne':2,'Basse':1};
                 const available=AppState.tasks.filter(t=>t.status!=='done'&&t.duration<=AppState.homeTime&&(energyLevels[t.energy]<=energyLevels[AppState.homeEnergy]));
-                AppState.homeSuggestions=available.sort((a,b)=>b.duration-a.duration).slice(0,3);
+                
+                AppState.homeSuggestions=available.sort((a,b)=>priorityWeights[b.priority]-priorityWeights[a.priority]).slice(0,3);
                 AppState.homeSearched=true;
                 this.render();
             },
             toggleProjectExpand(id){AppState.expandedProjectId=AppState.expandedProjectId===id?null:id;this.render();},
             toggleAddProject(){AppState.showAddProject=!AppState.showAddProject;this.render();},
             setBankFilter(filter){AppState.bankFilter=filter;this.render();},
+            setBankPriorityFilter(priority){AppState.bankPriorityFilter=priority;this.render();},
             
             handleDragStart(e, id, type, parentId = null) {
                 e.dataTransfer.setData('text/plain', JSON.stringify({id, type, parentId}));
@@ -272,6 +318,7 @@
             renderTask(task, minimal=false){
                 const isDone=task.status==='done';
                 const energyColors={'Haute':'text-cyan-400','Moyenne':'text-cyan-400','Basse':'text-gray-500'};
+                const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
                 return `
                 <div draggable="true" 
                      ondragstart="App.handleDragStart(event, '${task.id}', 'task')" 
@@ -284,7 +331,11 @@
                         ${isDone?'<i data-lucide="check-circle-2" class="text-emerald-500 shrink-0"></i>':'<i data-lucide="circle" class="text-gray-600 shrink-0"></i>'}
                         <div class="flex-1 min-w-0">
                             <h4 class="font-bold truncate text-[15px] ${isDone?'text-gray-500 line-through':'text-gray-200'}">${task.name}</h4>
-                            ${!minimal&&!isDone?`<div class="flex items-center gap-3 mt-1 text-xs font-semibold text-gray-500"><span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ${task.duration}m</span><span class="flex items-center gap-1"><i data-lucide="zap" class="w-3 h-3 ${energyColors[task.energy]}"></i> ${task.energy}</span></div>`:''}
+                            <div class="flex items-center gap-3 mt-1 text-xs font-semibold text-gray-500 flex-wrap">
+                                <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ${task.duration}m</span>
+                                <span class="flex items-center gap-1"><i data-lucide="zap" class="w-3 h-3 ${energyColors[task.energy]}"></i> ${task.energy}</span>
+                                <span class="px-2 py-0.5 rounded-md text-[10px] border font-bold ${priorityColors[task.priority || 'Moyenne']}">${task.priority || 'Moyenne'}</span>
+                            </div>
                         </div>
                     </div>
                     <div class="flex items-center gap-1 shrink-0 ml-2">
@@ -302,7 +353,19 @@
             
             renderHome(){
                 const now=new Date();
-                const urgencies=AppState.tasks.filter(t=>{if(t.status==='done')return false;if(t.projectId===null)return true;if(t.deadline){const diff=new Date(t.deadline)-now;return diff<3*24*60*60*1000};return false;}).slice(0,5);
+                const urgencies = AppState.tasks.filter(t => {
+                    if (t.status === 'done') return false;
+                    return true;
+                }).sort((a, b) => {
+                    const deadlineA = a.deadline ? new Date(a.deadline) : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+                    const deadlineB = b.deadline ? new Date(b.deadline) : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+                    const diffA = deadlineA - now;
+                    const diffB = deadlineB - now;
+                    const scoreA = diffA - (a.duration * 60 * 1000);
+                    const scoreB = diffB - (b.duration * 60 * 1000);
+                    return scoreA - scoreB;
+                }).slice(0, 5);
+
                 return `
                 <div class="space-y-8">
                     <section class="bg-[#1A1D24] rounded-3xl p-5 border border-gray-800/50 relative">
@@ -317,10 +380,10 @@
                             </div>
                             <button onclick="App.generateAction()" class="w-full py-4 mt-2 rounded-xl bg-cyan-500 text-black font-black text-lg uppercase transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)]">Trouver quoi faire</button>
                         </div>
-                        ${AppState.homeSearched?`<div class="mt-6 pt-4 border-t border-gray-800"><h3 class="text-xs font-bold text-gray-500 mb-3 uppercase">Résultats (${AppState.homeSuggestions.length})</h3>${AppState.homeSuggestions.length>0?`<div class="space-y-2">${AppState.homeSuggestions.map(t=>this.renderTask(t)).join('')}</div>`:`<p class="text-sm text-gray-500 text-center py-4">Aucune tâche ne correspond.</p>`}</div>`:''}
+                        ${AppState.homeSearched?`<div class="mt-6 pt-4 border-t border-gray-800"><h3 class="text-xs font-bold text-gray-500 mb-3 uppercase">Résultats triés par priorité (${AppState.homeSuggestions.length})</h3>${AppState.homeSuggestions.length>0?`<div class="space-y-2">${AppState.homeSuggestions.map(t=>this.renderTask(t)).join('')}</div>`:`<p class="text-sm text-gray-500 text-center py-4">Aucune tâche ne correspond.</p>`}</div>`:''}
                     </section>
                     <section>
-                        <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2"><i data-lucide="alert-circle" class="text-emerald-400 w-4 h-4"></i> Urgences & Rapides</h2>
+                        <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2"><i data-lucide="alert-circle" class="text-emerald-400 w-4 h-4"></i> Urgences & Rapides (Le + urgent & rapide)</h2>
                         <div class="space-y-2">${urgencies.length>0?urgencies.map(t=>this.renderTask(t)).join(''):`<div class="bg-[#1A1D24] rounded-2xl p-6 text-center border border-gray-800 border-dashed"><p class="text-gray-500 text-sm">Tout est sous contrôle.</p></div>`}</div>
                     </section>
                 </div>`;
@@ -340,6 +403,8 @@
                     });
                     const prog=total===0?0:Math.round((comp/total)*100);
                     const exp=AppState.expandedProjectId===project.id;
+                    const energyColors={'Haute':'text-cyan-400','Moyenne':'text-cyan-400','Basse':'text-gray-500'};
+                    const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
                     
                     return `
                     <div class="bg-[#1A1D24] rounded-2xl border border-gray-800 overflow-hidden">
@@ -388,17 +453,24 @@
                                         </div>
                                     `:''}
 
-                                    ${task.subtasks&&task.subtasks.length>0?`<div class="ml-8 space-y-1 border-l border-gray-800 pl-3">${task.subtasks.map(sub=>`
+                                    ${task.subtasks&&task.subtasks.length>0?`<div class="ml-8 space-y-1.5 border-l border-gray-800 pl-3">${task.subtasks.map(sub=>`
                                         <div draggable="true" 
                                              ondragstart="App.handleDragStart(event, '${sub.id}', 'subtask', '${task.id}')" 
                                              ondragend="App.handleDragEnd(event)" 
                                              ondragover="App.handleDragOver(event)" 
                                              ondragleave="App.handleDragLeave(event)" 
                                              ondrop="App.handleDrop(event, '${sub.id}', 'subtask', '${task.id}')"
-                                             class="draggable-item flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-[#1A1D24] transition-colors">
+                                             class="draggable-item flex items-center justify-between py-2 px-2.5 rounded-lg bg-[#13161c] border border-gray-800/40 hover:bg-[#1A1D24] transition-colors">
                                             <div class="flex items-center gap-2 cursor-pointer flex-1 min-w-0" onclick="App.toggleSubtask('${task.id}','${sub.id}')">
                                                 <i data-lucide="${sub.status==='done'?'check-circle-2':'circle'}" class="${sub.status==='done'?'text-emerald-500':'text-gray-600'} w-3.5 h-3.5 shrink-0"></i>
-                                                <span class="text-sm truncate ${sub.status==='done'?'text-gray-600 line-through':'text-gray-300'}">${sub.name}</span>
+                                                <div class="flex-1 min-w-0">
+                                                    <span class="text-sm truncate block ${sub.status==='done'?'text-gray-600 line-through':'text-gray-300'}">${sub.name}</span>
+                                                    <div class="flex items-center gap-2 mt-0.5 text-[10px] text-gray-500">
+                                                        <span><i data-lucide="clock" class="w-2.5 h-2.5 inline"></i> ${sub.duration || 15}m</span>
+                                                        <span><i data-lucide="zap" class="w-2.5 h-2.5 inline ${energyColors[sub.energy || 'Basse']}"></i> ${sub.energy || 'Basse'}</span>
+                                                        <span class="px-1.5 py-0.2 rounded text-[9px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>
+                                                    </div>
+                                                </div>
                                             </div>
                                             <button onclick="App.openMenu(event, 'subtask', '${sub.id}', '${task.id}')" class="p-1.5 text-gray-500 hover:text-cyan-400 shrink-0 ml-1 rounded-md">
                                                 <i data-lucide="more-vertical" class="w-4 h-4"></i>
@@ -414,9 +486,11 @@
             
             renderBank(){
                 const filteredTasks = AppState.tasks.filter(t => {
-                    if(AppState.bankFilter === 'isolated') return t.projectId === null && t.status !== 'done';
-                    if(AppState.bankFilter === 'done') return t.status === 'done';
-                    return t.status !== 'done';
+                    if(AppState.bankFilter === 'isolated' && (t.projectId !== null || t.status === 'done')) return false;
+                    if(AppState.bankFilter === 'done' && t.status !== 'done') return false;
+                    if(AppState.bankFilter === 'all' && t.status === 'done') return false;
+                    if(AppState.bankPriorityFilter !== 'all' && t.priority !== AppState.bankPriorityFilter) return false;
+                    return true;
                 });
 
                 let bankListHtml = '';
@@ -430,9 +504,13 @@
                         if (task.subtasks && task.subtasks.length > 0) {
                             const activeSubs = task.subtasks.filter(s => {
                                 if (AppState.bankFilter === 'done') return s.status === 'done';
+                                if (AppState.bankPriorityFilter !== 'all' && s.priority !== AppState.bankPriorityFilter) return false;
                                 return s.status !== 'done';
                             });
                             if (activeSubs.length > 0) {
+                                const energyColors={'Haute':'text-cyan-400','Moyenne':'text-cyan-400','Basse':'text-gray-500'};
+                                const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
+                                
                                 bankListHtml += `<div class="ml-4 mt-2 space-y-2 border-l-2 border-gray-800/50 pl-3">`;
                                 activeSubs.forEach(sub => {
                                     const isSubDone = sub.status === 'done';
@@ -442,6 +520,11 @@
                                             <i data-lucide="${isSubDone ? 'check-circle-2' : 'circle'}" class="${isSubDone ? 'text-emerald-500' : 'text-gray-600'} w-4 h-4 shrink-0"></i>
                                             <div class="flex-1 min-w-0">
                                                 <div class="text-sm ${isSubDone ? 'text-gray-600 line-through' : 'text-gray-300'} font-medium truncate">${sub.name}</div>
+                                                <div class="flex items-center gap-2 mt-1 text-[11px] text-gray-500 flex-wrap">
+                                                    <span><i data-lucide="clock" class="w-3 h-3 inline"></i> ${sub.duration || 15}m</span>
+                                                    <span><i data-lucide="zap" class="w-3 h-3 inline ${energyColors[sub.energy || 'Basse']}"></i> ${sub.energy || 'Basse'}</span>
+                                                    <span class="px-1.5 py-0.2 rounded text-[9px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>
+                                                </div>
                                                 <div class="text-[10px] text-cyan-500/70 font-semibold flex items-center gap-1 mt-0.5 truncate">
                                                     <i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> 
                                                     Sous-tâche de : ${task.name}
@@ -475,17 +558,31 @@
                                     <option value="15">15m</option><option value="30">30m</option><option value="60">1h</option>
                                 </select>
                             </div>
-                            <div class="flex gap-2">${['Basse','Moyenne','Haute'].map(e=>`<button type="button" onclick="App.selectBankEnergy(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${e==='Basse'?'energy-btn-selected bg-cyan-500/20 text-cyan-400 border border-cyan-500/50':'bg-[#0D0F12] text-gray-500 border border-transparent'}">${e}</button>`).join('')}</div>
+                            <div class="flex gap-2">
+                                ${['Basse','Moyenne','Haute'].map(e=>`<button type="button" onclick="App.selectBankEnergy(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${e==='Basse'?'energy-btn-selected bg-cyan-500/20 text-cyan-400 border border-cyan-500/50':'bg-[#0D0F12] text-gray-500 border border-transparent'}">${e}</button>`).join('')}
+                            </div>
+                            <div class="flex gap-2">
+                                ${['Basse','Moyenne','Haute'].map(p=>`<button type="button" onclick="App.selectBankPriority(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${p==='Moyenne'?'priority-btn-selected bg-purple-500/20 text-purple-400 border border-purple-500/50':'bg-[#0D0F12] text-gray-500 border border-transparent'}">Priorité : ${p}</button>`).join('')}
+                            </div>
                             <button type="submit" class="w-full py-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/50 font-bold uppercase hover:bg-emerald-500 hover:text-black">Ajouter</button>
                         </form>
                     </section>
                     <section>
-                        <div class="flex justify-between items-end mb-4 px-1">
-                            <h2 class="text-xl font-black text-white">Toutes les tâches</h2>
-                            <div class="flex gap-1 flex-wrap justify-end">
-                                <button onclick="App.setBankFilter('all')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='all'?'bg-gray-700 text-white':'bg-[#1A1D24] text-gray-500'}">Toutes</button>
-                                <button onclick="App.setBankFilter('isolated')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='isolated'?'bg-gray-700 text-white':'bg-[#1A1D24] text-gray-500'}">Isolées</button>
-                                <button onclick="App.setBankFilter('done')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='done'?'bg-emerald-600 text-white':'bg-[#1A1D24] text-gray-500'}">Effectuée</button>
+                        <div class="flex flex-col gap-3 mb-4 px-1">
+                            <div class="flex justify-between items-end">
+                                <h2 class="text-xl font-black text-white">Toutes les tâches</h2>
+                                <div class="flex gap-1 flex-wrap justify-end">
+                                    <button onclick="App.setBankFilter('all')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='all'?'bg-gray-700 text-white':'bg-[#1A1D24] text-gray-500'}">Actives</button>
+                                    <button onclick="App.setBankFilter('isolated')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='isolated'?'bg-gray-700 text-white':'bg-[#1A1D24] text-gray-500'}">Isolées</button>
+                                    <button onclick="App.setBankFilter('done')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='done'?'bg-emerald-600 text-white':'bg-[#1A1D24] text-gray-500'}">Effectuée</button>
+                                </div>
+                            </div>
+                            <div class="flex gap-1 items-center overflow-x-auto pb-1">
+                                <span class="text-[10px] text-gray-500 uppercase font-bold mr-1">Priorité:</span>
+                                <button onclick="App.setBankPriorityFilter('all')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='all'?'bg-cyan-500/20 text-cyan-400':'bg-[#1A1D24] text-gray-500'}">Toutes</button>
+                                <button onclick="App.setBankPriorityFilter('Haute')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Haute'?'bg-purple-500/20 text-purple-400':'bg-[#1A1D24] text-gray-500'}">Haute</button>
+                                <button onclick="App.setBankPriorityFilter('Moyenne')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Moyenne'?'bg-amber-500/20 text-amber-400':'bg-[#1A1D24] text-gray-500'}">Moyenne</button>
+                                <button onclick="App.setBankPriorityFilter('Basse')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Basse'?'bg-blue-500/20 text-blue-400':'bg-[#1A1D24] text-gray-500'}">Basse</button>
                             </div>
                         </div>
                         <div class="pb-10">${bankListHtml}</div>
@@ -497,6 +594,12 @@
                 const btns=btn.parentElement.querySelectorAll('button');
                 btns.forEach(b=>{b.classList.remove('energy-btn-selected','bg-cyan-500/20','text-cyan-400','border-cyan-500/50');b.classList.add('bg-[#0D0F12]','text-gray-500','border-transparent')});
                 btn.classList.add('energy-btn-selected','bg-cyan-500/20','text-cyan-400','border-cyan-500/50');
+                btn.classList.remove('bg-[#0D0F12]','text-gray-500','border-transparent');
+            },
+            selectBankPriority(btn){
+                const btns=btn.parentElement.querySelectorAll('button');
+                btns.forEach(b=>{b.classList.remove('priority-btn-selected','bg-purple-500/20','text-purple-400','border-purple-500/50');b.classList.add('bg-[#0D0F12]','text-gray-500','border-transparent')});
+                btn.classList.add('priority-btn-selected','bg-purple-500/20','text-purple-400','border-purple-500/50');
                 btn.classList.remove('bg-[#0D0F12]','text-gray-500','border-transparent');
             },
             
@@ -529,32 +632,58 @@
                                     <button onclick="App.closeMenu()" class="w-full text-center px-6 py-4 text-gray-500 font-bold hover:bg-[#1f232b] rounded-2xl">Annuler</button>
                                 </div>
                             </div>
-                        </div>
+                            </div>
                     `;
                 } else if (AppState.editPrompt) {
+                    const d = AppState.editPrompt.data;
                     modalContainer.innerHTML = `
                         <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeEdit()">
                             <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
                                 <h3 class="text-xl font-bold text-white mb-4">Modifier</h3>
                                 <form onsubmit="App.saveEdit(event)" class="space-y-4">
-                                    <input type="text" id="edit-name" value="${AppState.editPrompt.data.name.replace(/"/g, '&quot;')}" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none">
+                                    <input type="text" id="edit-name" value="${d.name.replace(/"/g, '&quot;')}" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none">
                                     
                                     ${AppState.editPrompt.type === 'task' ? `
                                     <div class="flex gap-2">
                                         <select id="edit-project" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none">
                                             <option value="">Projet : Aucun</option>
-                                            ${AppState.projects.map(p => `<option value="${p.id}" ${p.id === AppState.editPrompt.data.projectId ? 'selected' : ''}>${p.name}</option>`).join('')}
+                                            ${AppState.projects.map(p => `<option value="${p.id}" ${p.id === d.projectId ? 'selected' : ''}>${p.name}</option>`).join('')}
                                         </select>
                                         <select id="edit-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">
-                                            <option value="15" ${AppState.editPrompt.data.duration == 15 ? 'selected' : ''}>15m</option>
-                                            <option value="30" ${AppState.editPrompt.data.duration == 30 ? 'selected' : ''}>30m</option>
-                                            <option value="60" ${AppState.editPrompt.data.duration == 60 ? 'selected' : ''}>1h</option>
-                                            <option value="120" ${AppState.editPrompt.data.duration == 120 ? 'selected' : ''}>2h</option>
+                                            <option value="15" ${d.duration == 15 ? 'selected' : ''}>15m</option>
+                                            <option value="30" ${d.duration == 30 ? 'selected' : ''}>30m</option>
+                                            <option value="60" ${d.duration == 60 ? 'selected' : ''}>1h</option>
+                                            <option value="120" ${d.duration == 120 ? 'selected' : ''}>2h</option>
                                         </select>
                                     </div>
                                     <div class="flex gap-2">
                                         ${['Basse','Moyenne','Haute'].map(e => `
-                                            <button type="button" onclick="App.selectEditEnergy(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${e === AppState.editPrompt.data.energy ? 'edit-energy-selected bg-cyan-500/20 text-cyan-400 border border-cyan-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${e}</button>
+                                            <button type="button" onclick="App.selectEditEnergy(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${e === (d.energy || 'Basse') ? 'edit-energy-selected bg-cyan-500/20 text-cyan-400 border border-cyan-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${e}</button>
+                                        `).join('')}
+                                    </div>
+                                    <div class="flex gap-2">
+                                        ${['Basse','Moyenne','Haute'].map(p => `
+                                            <button type="button" onclick="App.selectEditPriority(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${p === (d.priority || 'Moyenne') ? 'edit-priority-selected bg-purple-500/20 text-purple-400 border border-purple-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${p}</button>
+                                        `).join('')}
+                                    </div>
+                                    ` : ''}
+
+                                    ${AppState.editPrompt.type === 'subtask' ? `
+                                    <div class="flex gap-2">
+                                        <select id="edit-sub-duration" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">
+                                            <option value="15" ${(d.duration || 15) == 15 ? 'selected' : ''}>15m</option>
+                                            <option value="30" ${(d.duration || 15) == 30 ? 'selected' : ''}>30m</option>
+                                            <option value="60" ${(d.duration || 15) == 60 ? 'selected' : ''}>1h</option>
+                                        </select>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        ${['Basse','Moyenne','Haute'].map(e => `
+                                            <button type="button" onclick="App.selectSubEditEnergy(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${e === (d.energy || 'Basse') ? 'edit-sub-energy-selected bg-cyan-500/20 text-cyan-400 border border-cyan-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${e}</button>
+                                        `).join('')}
+                                    </div>
+                                    <div class="flex gap-2">
+                                        ${['Basse','Moyenne','Haute'].map(p => `
+                                            <button type="button" onclick="App.selectSubEditPriority(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${p === (d.priority || 'Moyenne') ? 'edit-sub-priority-selected bg-purple-500/20 text-purple-400 border border-purple-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${p}</button>
                                         `).join('')}
                                     </div>
                                     ` : ''}
@@ -606,4 +735,3 @@
     </script>
 </body>
 </html>
-
