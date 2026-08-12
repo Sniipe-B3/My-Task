@@ -34,21 +34,39 @@
     </div>
     
     <script>
+        const LOCATIONS = ['Maison', 'Boulot', 'Ordi', 'Jardin'];
+        
         const INITIAL_PROJECTS = [{id:'p1',name:'Poulailler',deadline:'2026-09-01'},{id:'p2',name:'Entretien Peugeot',deadline:'2026-08-20'}];
         const INITIAL_TASKS = [
-            {id:'t1',projectId:'p1',name:'Acheter le bois',deadline:'',duration:60,energy:'Haute',priority:'Haute',status:'done',subtasks:[]},
-            {id:'t2',projectId:'p1',name:'Monter les murs',deadline:'2026-08-15',duration:120,energy:'Haute',priority:'Moyenne',status:'todo',subtasks:[{id:'s1',name:'Découper planches',duration:30,energy:'Moyenne',priority:'Haute',status:'todo'},{id:'s2',name:'Visser',duration:45,energy:'Basse',priority:'Basse',status:'todo'}]},
-            {id:'t3',projectId:'p2',name:'Prendre rdv garage',deadline:'2026-08-13',duration:15,energy:'Basse',priority:'Haute',status:'todo',subtasks:[]},
-            {id:'t4',projectId:null,name:'Appeler le dentiste',deadline:'2026-08-18',duration:15,energy:'Basse',priority:'Basse',status:'todo',subtasks:[]},
-            {id:'t5',projectId:null,name:'Déclarer impôts',deadline:'2026-08-14',duration:30,energy:'Haute',priority:'Haute',status:'todo',subtasks:[]}
+            {id:'t1',projectId:'p1',name:'Acheter le bois',deadline:'',duration:60,locations:['Boulot'],priority:'Haute',status:'done',subtasks:[]},
+            {id:'t2',projectId:'p1',name:'Monter les murs',deadline:'2026-08-15',duration:120,locations:['Jardin', 'Maison'],priority:'Moyenne',status:'todo',subtasks:[{id:'s1',name:'Découper planches',duration:30,locations:['Jardin'],priority:'Haute',status:'todo'},{id:'s2',name:'Visser',duration:45,locations:['Jardin'],priority:'Basse',status:'todo'}]},
+            {id:'t3',projectId:'p2',name:'Prendre rdv garage',deadline:'2026-08-13',duration:15,locations:['Ordi', 'Maison'],priority:'Haute',status:'todo',subtasks:[]},
+            {id:'t4',projectId:null,name:'Appeler le dentiste',deadline:'2026-08-18',duration:15,locations:['Maison', 'Boulot'],priority:'Basse',status:'todo',subtasks:[]},
+            {id:'t5',projectId:null,name:'Déclarer impôts',deadline:'2026-08-14',duration:30,locations:['Ordi'],priority:'Haute',status:'todo',subtasks:[]}
         ];
         
+        // Migration of old tasks if they don't have 'locations' array
+        const migrateTasks = (tasks) => {
+            return tasks.map(t => {
+                const newTask = { ...t, locations: t.locations || [] };
+                delete newTask.energy; // Cleanup old property
+                if (newTask.subtasks) {
+                    newTask.subtasks = newTask.subtasks.map(s => {
+                        const newSub = { ...s, locations: s.locations || [] };
+                        delete newSub.energy;
+                        return newSub;
+                    });
+                }
+                return newTask;
+            });
+        };
+
         const AppState = {
             activeTab:'home',
             projects:JSON.parse(localStorage.getItem('osdevie_projects'))||INITIAL_PROJECTS,
-            tasks:JSON.parse(localStorage.getItem('osdevie_tasks'))||INITIAL_TASKS,
+            tasks: migrateTasks(JSON.parse(localStorage.getItem('osdevie_tasks'))||INITIAL_TASKS),
             homeTime:30,
-            homeEnergy:'Moyenne',
+            homeLocations:[],
             homeSuggestions:[],
             homeSearched:false,
             expandedProjectId:null,
@@ -97,8 +115,26 @@
                 AppState.editPrompt = null;
                 this.render();
             },
+
+            toggleFormLocation(btn) {
+                btn.classList.toggle('loc-selected');
+                if (btn.classList.contains('loc-selected')) {
+                    btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
+                    btn.classList.add('bg-emerald-500/20', 'text-emerald-400', 'border-emerald-500/50');
+                } else {
+                    btn.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
+                    btn.classList.remove('bg-emerald-500/20', 'text-emerald-400', 'border-emerald-500/50');
+                }
+            },
+
+            getFormLocations(form) {
+                const locBtns = form.querySelectorAll('.loc-selected');
+                return Array.from(locBtns).map(b => b.getAttribute('data-loc'));
+            },
+
             saveEdit(event) {
                 event.preventDefault();
+                const form = event.target;
                 const { type, id, parentId } = AppState.editPrompt;
                 const name = document.getElementById('edit-name').value;
                 
@@ -107,35 +143,24 @@
                 } else if (type === 'task') {
                     const projectId = document.getElementById('edit-project').value || null;
                     const duration = parseInt(document.getElementById('edit-duration').value);
-                    const energyBtn = document.querySelector('.edit-energy-selected');
-                    const energy = energyBtn ? energyBtn.innerText.trim() : 'Basse';
-                    const priorityBtn = document.querySelector('.edit-priority-selected');
+                    const locations = this.getFormLocations(form);
+                    const priorityBtn = form.querySelector('.edit-priority-selected');
                     const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
-                    AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, energy, priority } : t);
+                    AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, locations, priority } : t);
                 } else if (type === 'subtask') {
                     const duration = parseInt(document.getElementById('edit-sub-duration').value);
-                    const energyBtn = document.querySelector('.edit-sub-energy-selected');
-                    const energy = energyBtn ? energyBtn.innerText.trim() : 'Basse';
-                    const priorityBtn = document.querySelector('.edit-sub-priority-selected');
+                    const locations = this.getFormLocations(form);
+                    const priorityBtn = form.querySelector('.edit-sub-priority-selected');
                     const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
                     AppState.tasks = AppState.tasks.map(t => {
                         if (t.id === parentId) {
-                            return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, energy, priority } : s) };
+                            return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, locations, priority } : s) };
                         }
                         return t;
                     });
                 }
                 AppState.editPrompt = null;
                 this.save();
-            },
-            selectEditEnergy(btn) {
-                const btns = btn.parentElement.querySelectorAll('button');
-                btns.forEach(b => {
-                    b.classList.remove('edit-energy-selected', 'bg-cyan-500/20', 'text-cyan-400', 'border-cyan-500/50');
-                    b.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
-                });
-                btn.classList.add('edit-energy-selected', 'bg-cyan-500/20', 'text-cyan-400', 'border-cyan-500/50');
-                btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
             },
             selectEditPriority(btn) {
                 const btns = btn.parentElement.querySelectorAll('button');
@@ -144,15 +169,6 @@
                     b.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
                 });
                 btn.classList.add('edit-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50');
-                btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
-            },
-            selectSubEditEnergy(btn) {
-                const btns = btn.parentElement.querySelectorAll('button');
-                btns.forEach(b => {
-                    b.classList.remove('edit-sub-energy-selected', 'bg-cyan-500/20', 'text-cyan-400', 'border-cyan-500/50');
-                    b.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
-                });
-                btn.classList.add('edit-sub-energy-selected', 'bg-cyan-500/20', 'text-cyan-400', 'border-cyan-500/50');
                 btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
             },
             selectSubEditPriority(btn) {
@@ -209,15 +225,20 @@
             },
             addTask(event){
                 event.preventDefault();
-                const name=document.getElementById('new-task-name').value;
-                const projectId=document.getElementById('new-task-project').value;
-                const duration=document.getElementById('new-task-duration').value;
-                const energyBtn=document.querySelector('.energy-btn-selected');
-                const energy=energyBtn?energyBtn.innerText.trim():'Basse';
-                const priorityBtn=document.querySelector('.priority-btn-selected');
-                const priority=priorityBtn?priorityBtn.innerText.trim():'Moyenne';
+                const form = event.target;
+                const name = document.getElementById('new-task-name').value;
+                const projectId = document.getElementById('new-task-project').value;
+                const duration = document.getElementById('new-task-duration').value;
+                const locations = this.getFormLocations(form);
+                const priorityBtn = form.querySelector('.priority-btn-selected');
+                const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
+                
                 if(!name.trim())return;
-                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId||null,duration:parseInt(duration),energy,priority,deadline:'',status:'todo',subtasks:[]});
+                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId||null,duration:parseInt(duration),locations,priority,deadline:'',status:'todo',subtasks:[]});
+                
+                // Reset form inputs (optional but good for UX)
+                document.getElementById('new-task-name').value = '';
+                
                 this.save();
             },
             addProjectTask(projectId){
@@ -225,7 +246,7 @@
                 if(!input) return;
                 const name = input.value;
                 if(!name.trim())return;
-                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId,duration:15,energy:'Basse',priority:'Moyenne',deadline:'',status:'todo',subtasks:[]});
+                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId,duration:15,locations:[],priority:'Moyenne',deadline:'',status:'todo',subtasks:[]});
                 AppState.showProjectAddTaskModal = null;
                 this.save();
             },
@@ -236,7 +257,7 @@
                 if(!name.trim())return;
                 AppState.tasks = AppState.tasks.map(t => {
                     if(t.id === taskId) {
-                        return {...t, subtasks: [...(t.subtasks||[]), {id: Date.now().toString(), name, duration: 15, energy: 'Basse', priority: 'Moyenne', status: 'todo'}]};
+                        return {...t, subtasks: [...(t.subtasks||[]), {id: Date.now().toString(), name, duration: 15, locations: [], priority: 'Moyenne', status: 'todo'}]};
                     }
                     return t;
                 });
@@ -250,12 +271,33 @@
                 AppState.showAddProject=false;
                 this.save();
             },
+            
             setHomeTime(time){AppState.homeTime=time;this.render();},
-            setHomeEnergy(energy){AppState.homeEnergy=energy;this.render();},
+            toggleHomeLocation(loc){
+                if(AppState.homeLocations.includes(loc)){
+                    AppState.homeLocations = AppState.homeLocations.filter(l => l !== loc);
+                } else {
+                    AppState.homeLocations.push(loc);
+                }
+                this.render();
+            },
+            
             generateAction(){
-                const energyLevels={'Basse':1,'Moyenne':2,'Haute':3};
                 const priorityWeights={'Haute':3,'Moyenne':2,'Basse':1};
-                const available=AppState.tasks.filter(t=>t.status!=='done'&&t.duration<=AppState.homeTime&&(energyLevels[t.energy]<=energyLevels[AppState.homeEnergy]));
+                const available=AppState.tasks.filter(t=>{
+                    if(t.status==='done') return false;
+                    if(t.duration > AppState.homeTime) return false;
+                    
+                    // Si un ou plusieurs filtres de lieux sont actifs
+                    if(AppState.homeLocations.length > 0) {
+                        // Si la tâche n'a aucun lieu, on ne l'affiche pas OU on la passe ?
+                        // Option choisie : la tâche doit avoir au moins un lieu en commun avec la sélection
+                        if (!t.locations || t.locations.length === 0) return false;
+                        const match = t.locations.some(l => AppState.homeLocations.includes(l));
+                        if(!match) return false;
+                    }
+                    return true;
+                });
                 
                 AppState.homeSuggestions=available.sort((a,b)=>priorityWeights[b.priority]-priorityWeights[a.priority]).slice(0,3);
                 AppState.homeSearched=true;
@@ -317,8 +359,9 @@
 
             renderTask(task, minimal=false){
                 const isDone=task.status==='done';
-                const energyColors={'Haute':'text-cyan-400','Moyenne':'text-cyan-400','Basse':'text-gray-500'};
                 const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
+                const hasLocations = task.locations && task.locations.length > 0;
+                
                 return `
                 <div draggable="true" 
                      ondragstart="App.handleDragStart(event, '${task.id}', 'task')" 
@@ -333,7 +376,7 @@
                             <h4 class="font-bold truncate text-[15px] ${isDone?'text-gray-500 line-through':'text-gray-200'}">${task.name}</h4>
                             <div class="flex items-center gap-3 mt-1 text-xs font-semibold text-gray-500 flex-wrap">
                                 <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ${task.duration}m</span>
-                                <span class="flex items-center gap-1"><i data-lucide="zap" class="w-3 h-3 ${energyColors[task.energy]}"></i> ${task.energy}</span>
+                                ${hasLocations ? `<span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3 text-emerald-400"></i> ${task.locations.join(', ')}</span>` : ''}
                                 <span class="px-2 py-0.5 rounded-md text-[10px] border font-bold ${priorityColors[task.priority || 'Moyenne']}">${task.priority || 'Moyenne'}</span>
                             </div>
                         </div>
@@ -375,8 +418,14 @@
                             <div><label class="text-xs font-semibold text-gray-400 uppercase mb-2 block">Temps dispo (min)</label>
                                 <div class="flex gap-2">${[15,30,60,120].map(t=>`<button onclick="App.setHomeTime(${t})" class="flex-1 py-2 rounded-xl text-sm font-bold ${AppState.homeTime===t?'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50':'bg-[#0D0F12] text-gray-400 border border-transparent'}">${t}${t===120?'+':''}</button>`).join('')}</div>
                             </div>
-                            <div><label class="text-xs font-semibold text-gray-400 uppercase mb-2 block">Énergie</label>
-                                <div class="flex gap-2">${['Basse','Moyenne','Haute'].map(e=>`<button onclick="App.setHomeEnergy('${e}')" class="flex-1 py-2 rounded-xl text-sm font-bold ${AppState.homeEnergy===e?'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50':'bg-[#0D0F12] text-gray-400 border border-transparent'}">${e}</button>`).join('')}</div>
+                            <div>
+                                <label class="text-xs font-semibold text-gray-400 uppercase mb-2 flex items-center justify-between">
+                                    <span>Lieu(x) possible(s)</span>
+                                    <span class="text-[10px] text-gray-500 font-normal">Vide = Partout</span>
+                                </label>
+                                <div class="flex gap-2 flex-wrap">
+                                    ${LOCATIONS.map(l=>`<button onclick="App.toggleHomeLocation('${l}')" class="flex-1 min-w-[70px] py-2 rounded-xl text-sm font-bold ${AppState.homeLocations.includes(l)?'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50':'bg-[#0D0F12] text-gray-400 border border-transparent'}">${l}</button>`).join('')}
+                                </div>
                             </div>
                             <button onclick="App.generateAction()" class="w-full py-4 mt-2 rounded-xl bg-cyan-500 text-black font-black text-lg uppercase transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)]">Trouver quoi faire</button>
                         </div>
@@ -403,7 +452,6 @@
                     });
                     const prog=total===0?0:Math.round((comp/total)*100);
                     const exp=AppState.expandedProjectId===project.id;
-                    const energyColors={'Haute':'text-cyan-400','Moyenne':'text-cyan-400','Basse':'text-gray-500'};
                     const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
                     
                     return `
@@ -467,7 +515,7 @@
                                                     <span class="text-sm truncate block ${sub.status==='done'?'text-gray-600 line-through':'text-gray-300'}">${sub.name}</span>
                                                     <div class="flex items-center gap-2 mt-0.5 text-[10px] text-gray-500">
                                                         <span><i data-lucide="clock" class="w-2.5 h-2.5 inline"></i> ${sub.duration || 15}m</span>
-                                                        <span><i data-lucide="zap" class="w-2.5 h-2.5 inline ${energyColors[sub.energy || 'Basse']}"></i> ${sub.energy || 'Basse'}</span>
+                                                        ${sub.locations && sub.locations.length > 0 ? `<span><i data-lucide="map-pin" class="w-2.5 h-2.5 inline text-emerald-400"></i> ${sub.locations.join(', ')}</span>` : ''}
                                                         <span class="px-1.5 py-0.2 rounded text-[9px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>
                                                     </div>
                                                 </div>
@@ -508,7 +556,6 @@
                                 return s.status !== 'done';
                             });
                             if (activeSubs.length > 0) {
-                                const energyColors={'Haute':'text-cyan-400','Moyenne':'text-cyan-400','Basse':'text-gray-500'};
                                 const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
                                 
                                 bankListHtml += `<div class="ml-4 mt-2 space-y-2 border-l-2 border-gray-800/50 pl-3">`;
@@ -522,7 +569,7 @@
                                                 <div class="text-sm ${isSubDone ? 'text-gray-600 line-through' : 'text-gray-300'} font-medium truncate">${sub.name}</div>
                                                 <div class="flex items-center gap-2 mt-1 text-[11px] text-gray-500 flex-wrap">
                                                     <span><i data-lucide="clock" class="w-3 h-3 inline"></i> ${sub.duration || 15}m</span>
-                                                    <span><i data-lucide="zap" class="w-3 h-3 inline ${energyColors[sub.energy || 'Basse']}"></i> ${sub.energy || 'Basse'}</span>
+                                                    ${sub.locations && sub.locations.length > 0 ? `<span><i data-lucide="map-pin" class="w-3 h-3 inline text-emerald-400"></i> ${sub.locations.join(', ')}</span>` : ''}
                                                     <span class="px-1.5 py-0.2 rounded text-[9px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>
                                                 </div>
                                                 <div class="text-[10px] text-cyan-500/70 font-semibold flex items-center gap-1 mt-0.5 truncate">
@@ -558,8 +605,8 @@
                                     <option value="15">15m</option><option value="30">30m</option><option value="60">1h</option>
                                 </select>
                             </div>
-                            <div class="flex gap-2">
-                                ${['Basse','Moyenne','Haute'].map(e=>`<button type="button" onclick="App.selectBankEnergy(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${e==='Basse'?'energy-btn-selected bg-cyan-500/20 text-cyan-400 border border-cyan-500/50':'bg-[#0D0F12] text-gray-500 border border-transparent'}">${e}</button>`).join('')}
+                            <div class="flex gap-2 flex-wrap">
+                                ${LOCATIONS.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold bg-[#0D0F12] text-gray-500 border border-transparent" data-loc="${l}">${l}</button>`).join('')}
                             </div>
                             <div class="flex gap-2">
                                 ${['Basse','Moyenne','Haute'].map(p=>`<button type="button" onclick="App.selectBankPriority(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${p==='Moyenne'?'priority-btn-selected bg-purple-500/20 text-purple-400 border border-purple-500/50':'bg-[#0D0F12] text-gray-500 border border-transparent'}">Priorité : ${p}</button>`).join('')}
@@ -590,12 +637,6 @@
                 </div>`;
             },
             
-            selectBankEnergy(btn){
-                const btns=btn.parentElement.querySelectorAll('button');
-                btns.forEach(b=>{b.classList.remove('energy-btn-selected','bg-cyan-500/20','text-cyan-400','border-cyan-500/50');b.classList.add('bg-[#0D0F12]','text-gray-500','border-transparent')});
-                btn.classList.add('energy-btn-selected','bg-cyan-500/20','text-cyan-400','border-cyan-500/50');
-                btn.classList.remove('bg-[#0D0F12]','text-gray-500','border-transparent');
-            },
             selectBankPriority(btn){
                 const btns=btn.parentElement.querySelectorAll('button');
                 btns.forEach(b=>{b.classList.remove('priority-btn-selected','bg-purple-500/20','text-purple-400','border-purple-500/50');b.classList.add('bg-[#0D0F12]','text-gray-500','border-transparent')});
@@ -636,6 +677,8 @@
                     `;
                 } else if (AppState.editPrompt) {
                     const d = AppState.editPrompt.data;
+                    const dLocs = d.locations || [];
+                    
                     modalContainer.innerHTML = `
                         <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeEdit()">
                             <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
@@ -656,9 +699,9 @@
                                             <option value="120" ${d.duration == 120 ? 'selected' : ''}>2h</option>
                                         </select>
                                     </div>
-                                    <div class="flex gap-2">
-                                        ${['Basse','Moyenne','Haute'].map(e => `
-                                            <button type="button" onclick="App.selectEditEnergy(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${e === (d.energy || 'Basse') ? 'edit-energy-selected bg-cyan-500/20 text-cyan-400 border border-cyan-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${e}</button>
+                                    <div class="flex gap-2 flex-wrap">
+                                        ${LOCATIONS.map(l => `
+                                            <button type="button" onclick="App.toggleFormLocation(this)" data-loc="${l}" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold ${dLocs.includes(l) ? 'loc-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${l}</button>
                                         `).join('')}
                                     </div>
                                     <div class="flex gap-2">
@@ -676,9 +719,9 @@
                                             <option value="60" ${(d.duration || 15) == 60 ? 'selected' : ''}>1h</option>
                                         </select>
                                     </div>
-                                    <div class="flex gap-2">
-                                        ${['Basse','Moyenne','Haute'].map(e => `
-                                            <button type="button" onclick="App.selectSubEditEnergy(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${e === (d.energy || 'Basse') ? 'edit-sub-energy-selected bg-cyan-500/20 text-cyan-400 border border-cyan-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${e}</button>
+                                    <div class="flex gap-2 flex-wrap">
+                                        ${LOCATIONS.map(l => `
+                                            <button type="button" onclick="App.toggleFormLocation(this)" data-loc="${l}" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold ${dLocs.includes(l) ? 'loc-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${l}</button>
                                         `).join('')}
                                     </div>
                                     <div class="flex gap-2">
