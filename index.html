@@ -34,23 +34,29 @@
     </div>
     
     <script>
-        const INITIAL_PROJECTS = [{id:'p1',name:'Poulailler',deadline:'2026-09-01',note:''},{id:'p2',name:'Entretien Peugeot',deadline:'2026-08-20',note:''}];
+        const INITIAL_PROJECTS = [{id:'p1',name:'Poulailler',deadline:'2026-09-01',note:'',category:'Business'},{id:'p2',name:'Entretien Peugeot',deadline:'2026-08-20',note:'',category:'Famille'}];
         const INITIAL_TASKS = [
-            {id:'t1',projectId:'p1',name:'Acheter le bois',deadline:'',duration:60,locations:['Boulot'],category:'Business',priority:'Haute',status:'done',subtasks:[],note:''},
-            {id:'t2',projectId:'p1',name:'Monter les murs',deadline:'2026-08-15',duration:120,locations:['Jardin', 'Maison'],category:'Famille',priority:'Moyenne',status:'todo',note:'Penser à vérifier le niveau',subtasks:[{id:'s1',name:'Découper planches',duration:30,locations:['Jardin'],category:'Famille',priority:'Haute',status:'todo',note:''},{id:'s2',name:'Visser',duration:45,locations:['Jardin'],category:'Famille',priority:'Basse',status:'todo',note:''}]},
-            {id:'t3',projectId:'p2',name:'Prendre rdv garage',deadline:'2026-08-13',duration:15,locations:['Ordi', 'Maison'],category:'Famille',priority:'Haute',status:'todo',subtasks:[],note:''},
-            {id:'t4',projectId:null,name:'Appeler le dentiste',deadline:'2026-08-18',duration:15,locations:['Maison', 'Boulot'],category:'',priority:'Basse',status:'todo',subtasks:[],note:''},
-            {id:'t5',projectId:null,name:'Déclarer impôts',deadline:'2026-08-14',duration:30,locations:['Ordi'],category:'Business',priority:'Haute',status:'todo',subtasks:[],note:''}
+            {id:'t1',projectId:'p1',name:'Acheter le bois',deadline:'',duration:60,locations:['Boulot'],priority:'Haute',status:'done',subtasks:[],note:''},
+            {id:'t2',projectId:'p1',name:'Monter les murs',deadline:'2026-08-15',duration:120,locations:['Jardin', 'Maison'],priority:'Moyenne',status:'todo',note:'Penser à vérifier le niveau',subtasks:[{id:'s1',name:'Découper planches',duration:30,locations:['Jardin'],priority:'Haute',status:'todo',note:''},{id:'s2',name:'Visser',duration:45,locations:['Jardin'],priority:'Basse',status:'todo',note:''}]},
+            {id:'t3',projectId:'p2',name:'Prendre rdv garage',deadline:'2026-08-13',duration:15,locations:['Ordi', 'Maison'],priority:'Haute',status:'todo',subtasks:[],note:''},
+            {id:'t4',projectId:null,name:'Appeler le dentiste',deadline:'2026-08-18',duration:15,locations:['Maison', 'Boulot'],priority:'Basse',status:'todo',subtasks:[],note:''},
+            {id:'t5',projectId:null,name:'Déclarer impôts',deadline:'2026-08-14',duration:30,locations:['Ordi'],priority:'Haute',status:'todo',subtasks:[],note:''}
         ];
         
+        // Migration of old data
+        const migrateProjects = (projects) => {
+            return projects.map(p => ({ ...p, category: p.category || '' }));
+        };
         const migrateTasks = (tasks) => {
             return tasks.map(t => {
-                const newTask = { ...t, locations: t.locations || [], category: t.category || '', note: t.note || '' };
+                const newTask = { ...t, locations: t.locations || [], note: t.note || '' };
                 delete newTask.energy;
+                delete newTask.category;
                 if (newTask.subtasks) {
                     newTask.subtasks = newTask.subtasks.map(s => {
-                        const newSub = { ...s, locations: s.locations || [], category: s.category || '', note: s.note || '' };
+                        const newSub = { ...s, locations: s.locations || [], note: s.note || '' };
                         delete newSub.energy;
+                        delete newSub.category;
                         return newSub;
                     });
                 }
@@ -65,7 +71,7 @@
                 locations: ['Maison', 'Boulot', 'Ordi', 'Jardin'],
                 categories: ['Business', 'Famille']
             },
-            projects:JSON.parse(localStorage.getItem('osdevie_projects'))||INITIAL_PROJECTS,
+            projects: migrateProjects(JSON.parse(localStorage.getItem('osdevie_projects'))||INITIAL_PROJECTS),
             tasks: migrateTasks(JSON.parse(localStorage.getItem('osdevie_tasks'))||INITIAL_TASKS),
             homeTime:30,
             homeLocations:[],
@@ -156,7 +162,7 @@
                 }
                 
                 AppState.notePrompt = { type, id, parentId, note: itemData.note || '' };
-                AppState.activeMenu = null; // Close menu if open
+                AppState.activeMenu = null; 
                 this.render();
             },
             closeNote() {
@@ -207,27 +213,26 @@
                 const name = document.getElementById('edit-name').value;
                 
                 if (type === 'project') {
-                    AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, name } : p);
+                    const category = document.getElementById('edit-proj-category').value;
+                    AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, name, category } : p);
                 } else if (type === 'task') {
                     const projectId = document.getElementById('edit-project').value || null;
                     const duration = parseInt(document.getElementById('edit-duration').value);
-                    const category = document.getElementById('edit-category').value;
                     const locations = this.getFormLocations(form);
                     const priorityBtn = form.querySelector('.edit-priority-selected');
                     const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
-                    AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, locations, category, priority } : t);
+                    AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, locations, priority } : t);
                 } else if (type === 'subtask') {
                     const duration = parseInt(document.getElementById('edit-sub-duration').value);
-                    const category = document.getElementById('edit-sub-category').value;
                     const locations = this.getFormLocations(form);
                     const priorityBtn = form.querySelector('.edit-sub-priority-selected');
                     const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
                     AppState.tasks = AppState.tasks.map(t => {
                         if (t.id === parentId) {
-                            return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, locations, category, priority } : s) };
+                            return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, locations, priority } : s) };
                         }
                         return t;
-                    });
+                        });
                 }
                 AppState.editPrompt = null;
                 this.save();
@@ -299,13 +304,12 @@
                 const name = document.getElementById('new-task-name').value;
                 const projectId = document.getElementById('new-task-project').value;
                 const duration = document.getElementById('new-task-duration').value;
-                const category = document.getElementById('new-task-category').value;
                 const locations = this.getFormLocations(form);
                 const priorityBtn = form.querySelector('.priority-btn-selected');
                 const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
                 
                 if(!name.trim())return;
-                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId||null,duration:parseInt(duration),locations,category,priority,deadline:'',status:'todo',subtasks:[],note:''});
+                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId||null,duration:parseInt(duration),locations,priority,deadline:'',status:'todo',subtasks:[],note:''});
                 
                 document.getElementById('new-task-name').value = '';
                 this.save();
@@ -315,7 +319,7 @@
                 if(!input) return;
                 const name = input.value;
                 if(!name.trim())return;
-                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId,duration:15,locations:[],category:'',priority:'Moyenne',deadline:'',status:'todo',subtasks:[],note:''});
+                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId,duration:15,locations:[],priority:'Moyenne',deadline:'',status:'todo',subtasks:[],note:''});
                 AppState.showProjectAddTaskModal = null;
                 this.save();
             },
@@ -326,7 +330,7 @@
                 if(!name.trim())return;
                 AppState.tasks = AppState.tasks.map(t => {
                     if(t.id === taskId) {
-                        return {...t, subtasks: [...(t.subtasks||[]), {id: Date.now().toString(), name, duration: 15, locations: [], category: '', priority: 'Moyenne', status: 'todo', note: ''}]};
+                        return {...t, subtasks: [...(t.subtasks||[]), {id: Date.now().toString(), name, duration: 15, locations: [], priority: 'Moyenne', status: 'todo', note: ''}]};
                     }
                     return t;
                 });
@@ -335,8 +339,9 @@
             },
             addProject(){
                 const name=document.getElementById('new-proj-name').value;
+                const category=document.getElementById('new-proj-category').value;
                 if(!name.trim())return;
-                AppState.projects.push({id:Date.now().toString(),name,deadline:'',note:''});
+                AppState.projects.push({id:Date.now().toString(),name,category,deadline:'',note:''});
                 AppState.showAddProject=false;
                 this.save();
             },
@@ -445,7 +450,6 @@
                             <div class="flex items-center gap-2 mt-1 text-xs font-semibold text-gray-500 flex-wrap">
                                 <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ${task.duration}m</span>
                                 ${hasLocations ? `<span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3 text-emerald-400"></i> ${task.locations.join(', ')}</span>` : ''}
-                                ${task.category ? `<span class="px-1.5 py-0.5 rounded text-[10px] border border-gray-700 bg-gray-800 text-gray-300">${task.category}</span>` : ''}
                                 <span class="px-2 py-0.5 rounded-md text-[10px] border font-bold ${priorityColors[task.priority || 'Moyenne']}">${task.priority || 'Moyenne'}</span>
                                 ${task.note ? `<span onclick="App.openNote('task', '${task.id}'); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
                             </div>
@@ -462,7 +466,7 @@
                         </button>
                     </div>
                 </div>`;
-            },
+                },
             
             renderHome(){
                 const now=new Date();
@@ -480,22 +484,23 @@
                 }).slice(0, 5);
 
                 const categoryStats = AppState.settings.categories.map(cat => {
-                    let total = 0;
+                    const catProjects = AppState.projects.filter(p => p.category === cat);
+                    const total = catProjects.length;
                     let done = 0;
-                    AppState.tasks.forEach(t => {
-                        if (t.category === cat) {
-                            total++;
-                            if (t.status === 'done') done++;
-                        }
-                        if (t.subtasks) {
-                            t.subtasks.forEach(s => {
-                                if (s.category === cat) {
-                                    total++;
-                                    if (s.status === 'done') done++;
-                                }
-                            });
-                        }
+
+                    catProjects.forEach(p => {
+                        const projectTasks = AppState.tasks.filter(t => t.projectId === p.id);
+                        let tTotal = 0, tComp = 0;
+                        projectTasks.forEach(t => {
+                            tTotal++; if (t.status === 'done') tComp++;
+                            if (t.subtasks) {
+                                t.subtasks.forEach(s => { tTotal++; if (s.status === 'done') tComp++; });
+                            }
+                        });
+                        // Le projet est compté "terminé" si toutes ses tâches sont faites et qu'il en a au moins une.
+                        if (tTotal > 0 && tTotal === tComp) done++;
                     });
+
                     const percent = total === 0 ? 0 : Math.round((done / total) * 100);
                     return { cat, total, done, percent };
                 });
@@ -524,20 +529,20 @@
                     </section>
                     
                     <section>
-                    <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2"><i data-lucide="alert-circle" class="text-emerald-400 w-4 h-4"></i> Urgences & Rapides (Le + urgent & rapide)</h2>
+                        <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2"><i data-lucide="alert-circle" class="text-emerald-400 w-4 h-4"></i> Urgences & Rapides (Le + urgent & rapide)</h2>
                         <div class="space-y-2">${urgencies.length>0?urgencies.map(t=>this.renderTask(t)).join(''):`<div class="bg-[#1A1D24] rounded-2xl p-6 text-center border border-gray-800 border-dashed"><p class="text-gray-500 text-sm">Tout est sous contrôle.</p></div>`}</div>
                     </section>
 
                     <section class="mt-8 pb-4">
                         <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2">
-                            <i data-lucide="bar-chart-2" class="text-indigo-400 w-4 h-4"></i> Progression par Catégorie
+                            <i data-lucide="bar-chart-2" class="text-indigo-400 w-4 h-4"></i> Progression des Projets
                         </h2>
                         <div class="space-y-3">
                             ${categoryStats.map(stat => `
                                 <div class="bg-[#1A1D24] rounded-2xl p-4 border border-gray-800">
                                     <div class="flex justify-between items-end mb-2">
                                         <span class="font-bold text-gray-200">${stat.cat}</span>
-                                        <span class="text-xs font-semibold text-gray-500">${stat.done} / ${stat.total} (${stat.percent}%)</span>
+                                        <span class="text-xs font-semibold text-gray-500">${stat.done} projet(s) sur ${stat.total} (${stat.percent}%)</span>
                                     </div>
                                     <div class="h-2 w-full bg-[#0D0F12] rounded-full overflow-hidden border border-gray-800/50">
                                         <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000" style="width: ${stat.percent}%"></div>
@@ -552,7 +557,17 @@
             renderProjects(){
                 let html=`<div class="space-y-4"><div class="flex justify-between items-center mb-6 px-1"><h2 class="text-xl font-black text-white">Grands Chantiers</h2><button onclick="App.toggleAddProject()" class="h-8 w-8 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center border border-cyan-500/30"><i data-lucide="plus" class="w-4 h-4"></i></button></div>`;
                 
-                if(AppState.showAddProject)html+=`<div class="bg-[#1A1D24] p-4 rounded-2xl border border-cyan-500/30 mb-4 flex gap-2"><input type="text" id="new-proj-name" placeholder="Nom du projet..." class="flex-1 bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addProject()" class="bg-cyan-500 text-black px-4 py-2 rounded-lg text-sm font-bold">OK</button></div>`;
+                if(AppState.showAddProject)html+=`
+                    <div class="bg-[#1A1D24] p-4 rounded-2xl border border-cyan-500/30 mb-4 flex flex-col gap-3">
+                        <input type="text" id="new-proj-name" placeholder="Nom du projet..." class="w-full bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-white focus:outline-none border border-gray-800">
+                        <div class="flex gap-2">
+                            <select id="new-proj-category" class="flex-1 bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-gray-300 border border-gray-800 focus:outline-none">
+                                <option value="">Catégorie : Aucune</option>
+                                ${AppState.settings.categories.map(c=>`<option value="${c}">${c}</option>`).join('')}
+                            </select>
+                            <button onclick="App.addProject()" class="bg-cyan-500 text-black px-4 py-2 rounded-lg text-sm font-bold">OK</button>
+                        </div>
+                    </div>`;
                 
                 html+=AppState.projects.map(project=>{
                     const projectTasks=AppState.tasks.filter(t=>t.projectId===project.id);
@@ -571,9 +586,10 @@
                             <div class="flex justify-between items-start mb-3">
                                 <div class="flex items-center gap-3 flex-1 min-w-0">
                                     <div class="p-2 rounded-xl ${prog===100?'bg-emerald-500/20 text-emerald-400':'bg-cyan-500/20 text-cyan-400'} shrink-0"><i data-lucide="folder" class="w-5 h-5 fill-current opacity-50"></i></div>
-                                    <div class="flex-1 min-w-0 flex items-center">
+                                    <div class="flex-1 min-w-0 flex items-center flex-wrap gap-y-1">
                                         <h3 class="font-bold text-lg truncate ${prog===100?'text-gray-400 line-through':'text-white'}">${project.name}</h3>
-                                        ${project.note ? `<span onclick="App.openNote('project', '${project.id}'); event.stopPropagation();" class="text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 p-1 rounded-lg border border-amber-500/30 ml-2 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3.5 h-3.5"></i></span>` : ''}
+                                        ${project.category ? `<span class="px-2 py-0.5 rounded text-[10px] border border-gray-700 bg-gray-800 text-gray-300 ml-2">${project.category}</span>` : ''}
+                                        ${project.note ? `<span onclick="App.openNote('project', '${project.id}'); event.stopPropagation();" class="text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 p-1 rounded-md border border-amber-500/30 ml-2 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-1 shrink-0 ml-2">
@@ -632,7 +648,6 @@
                                                     <div class="flex items-center gap-2 mt-0.5 text-[10px] text-gray-500 flex-wrap">
                                                         <span><i data-lucide="clock" class="w-2.5 h-2.5 inline"></i> ${sub.duration || 15}m</span>
                                                         ${sub.locations && sub.locations.length > 0 ? `<span><i data-lucide="map-pin" class="w-2.5 h-2.5 inline text-emerald-400"></i> ${sub.locations.join(', ')}</span>` : ''}
-                                                        ${sub.category ? `<span class="px-1.5 py-0.5 rounded text-[9px] border border-gray-700 bg-gray-800 text-gray-300">${sub.category}</span>` : ''}
                                                         <span class="px-1.5 py-0.2 rounded text-[9px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>
                                                         ${sub.note ? `<span onclick="App.openNote('subtask', '${sub.id}', '${task.id}'); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-2.5 h-2.5"></i></span>` : ''}
                                                     </div>
@@ -690,7 +705,6 @@
                                                 <div class="flex items-center gap-2 mt-1 text-[11px] text-gray-500 flex-wrap">
                                                     <span><i data-lucide="clock" class="w-3 h-3 inline"></i> ${sub.duration || 15}m</span>
                                                     ${sub.locations && sub.locations.length > 0 ? `<span><i data-lucide="map-pin" class="w-3 h-3 inline text-emerald-400"></i> ${sub.locations.join(', ')}</span>` : ''}
-                                                    ${sub.category ? `<span class="px-1.5 py-0.5 rounded text-[9px] border border-gray-700 bg-gray-800 text-gray-300">${sub.category}</span>` : ''}
                                                     <span class="px-1.5 py-0.2 rounded text-[9px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>
                                                     ${sub.note ? `<span onclick="App.openNote('subtask', '${sub.id}', '${task.id}'); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
                                                 </div>
@@ -728,11 +742,6 @@
                                     ${AppState.settings.times.map(t => `<option value="${t}">${t}m</option>`).join('')}
                                 </select>
                             </div>
-
-                            <select id="new-task-category" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800">
-                                <option value="">Catégorie : Aucune</option>
-                                ${AppState.settings.categories.map(c=>`<option value="${c}">${c}</option>`).join('')}
-                            </select>
 
                             <div class="flex gap-2 flex-wrap">
                                 ${AppState.settings.locations.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold bg-[#0D0F12] text-gray-500 border border-transparent" data-loc="${l}">${l}</button>`).join('')}
@@ -806,7 +815,7 @@
                     </div>
                     ${renderList('times', 'Ex: 45', true)}
                     ${renderList('locations', 'Ex: Garage', false)}
-                    ${renderList('categories', 'Ex: Santé', false)}
+                    ${renderList('categories', 'Ex: Famille', false)}
                 </div>
                 `;
             },
@@ -873,9 +882,16 @@
                                 <form onsubmit="App.saveEdit(event)" class="space-y-4">
                                     <input type="text" id="edit-name" value="${d.name.replace(/"/g, '&quot;')}" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none">
                                     
+                                    ${AppState.editPrompt.type === 'project' ? `
+                                        <select id="edit-proj-category" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none">
+                                            <option value="">Catégorie : Aucune</option>
+                                            ${AppState.settings.categories.map(c => `<option value="${c}" ${c === dCat ? 'selected' : ''}>${c}</option>`).join('')}
+                                        </select>
+                                    ` : ''}
+
                                     ${AppState.editPrompt.type === 'task' ? `
                                     <div class="flex gap-2">
-                                        <select id="edit-project" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none">
+                                    <select id="edit-project" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none">
                                             <option value="">Projet : Aucun</option>
                                             ${AppState.projects.map(p => `<option value="${p.id}" ${p.id === d.projectId ? 'selected' : ''}>${p.name}</option>`).join('')}
                                         </select>
@@ -883,10 +899,6 @@
                                             ${AppState.settings.times.map(t => `<option value="${t}" ${d.duration == t ? 'selected' : ''}>${t}m</option>`).join('')}
                                         </select>
                                     </div>
-                                    <select id="edit-category" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none">
-                                        <option value="">Catégorie : Aucune</option>
-                                        ${AppState.settings.categories.map(c => `<option value="${c}" ${c === dCat ? 'selected' : ''}>${c}</option>`).join('')}
-                                    </select>
                                     <div class="flex gap-2 flex-wrap">
                                         ${AppState.settings.locations.map(l => `
                                             <button type="button" onclick="App.toggleFormLocation(this)" data-loc="${l}" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold ${dLocs.includes(l) ? 'loc-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${l}</button>
@@ -905,10 +917,6 @@
                                             ${AppState.settings.times.map(t => `<option value="${t}" ${(d.duration || 15) == t ? 'selected' : ''}>${t}m</option>`).join('')}
                                         </select>
                                     </div>
-                                    <select id="edit-sub-category" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none">
-                                        <option value="">Catégorie : Aucune</option>
-                                        ${AppState.settings.categories.map(c => `<option value="${c}" ${c === dCat ? 'selected' : ''}>${c}</option>`).join('')}
-                                    </select>
                                     <div class="flex gap-2 flex-wrap">
                                         ${AppState.settings.locations.map(l => `
                                             <button type="button" onclick="App.toggleFormLocation(this)" data-loc="${l}" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold ${dLocs.includes(l) ? 'loc-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${l}</button>
@@ -929,7 +937,7 @@
                             </div>
                         </div>
                     `;
-                    } else if (AppState.deletePrompt) {
+                } else if (AppState.deletePrompt) {
                     let typeName = AppState.deletePrompt.type === 'project' ? 'ce projet' : (AppState.deletePrompt.type === 'task' ? 'cette tâche' : 'cette sous-tâche');
                     modalContainer.innerHTML = `
                         <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.cancelDelete()">
