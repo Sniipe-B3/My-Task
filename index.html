@@ -18,48 +18,45 @@
             to { transform: translateY(0); opacity: 1; }
         }
         .animate-slide-up { animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        /* Style pour les liens dans les notes */
+        .note-content a { color: #22d3ee; text-decoration: underline; }
     </style>
 </head>
 <body class="bg-black text-gray-200 font-sans selection:bg-cyan-500/30">
     <div class="flex justify-center w-full min-h-screen">
         <div class="w-full min-h-screen bg-[#0D0F12] flex flex-col relative overflow-hidden" id="app-container">
-            <header class="pt-12 pb-4 px-6 bg-gradient-to-b from-[#161a22] to-[#0D0F12] flex items-center justify-between z-10">
-                <h1 class="text-2xl font-black tracking-tight text-white flex items-center gap-2">
-                    <i data-lucide="zap" class="text-cyan-400 fill-cyan-400"></i>
-                    OS de Vie
-                </h1>
-            </header>
-            <main id="app-content" class="flex-1 overflow-y-auto pb-24 px-4"></main>
+            <!-- Header retiré selon la demande -->
+            <main id="app-content" class="flex-1 overflow-y-auto pt-8 pb-24 px-4"></main>
         </div>
     </div>
     
     <script>
-        const INITIAL_PROJECTS = [{id:'p1',name:'Poulailler',note:'',category:'Business'},{id:'p2',name:'Entretien Peugeot',note:'',category:'Famille'}];
+        const INITIAL_PROJECTS = [{id:'p1',name:'Poulailler',note:'',category:'Business',archived:false},{id:'p2',name:'Entretien Peugeot',note:'',category:'Famille',archived:false}];
         const INITIAL_TASKS = [
-            {id:'t1',projectId:'p1',name:'Acheter le bois',duration:60,locations:['Boulot'],priority:'Haute',status:'done',subtasks:[],note:''},
-            {id:'t2',projectId:'p1',name:'Monter les murs',duration:120,locations:['Jardin', 'Maison'],priority:'Moyenne',status:'todo',note:'Penser à vérifier le niveau',subtasks:[{id:'s1',name:'Découper planches',duration:30,locations:['Jardin'],priority:'Haute',status:'todo',note:''},{id:'s2',name:'Visser',duration:45,locations:['Jardin'],priority:'Basse',status:'todo',note:''}]},
-            {id:'t3',projectId:'p2',name:'Prendre rdv garage',duration:15,locations:['Ordi', 'Maison'],priority:'Haute',status:'todo',subtasks:[],note:''},
-            {id:'t4',projectId:null,name:'Appeler le dentiste',duration:15,locations:['Maison', 'Boulot'],priority:'Basse',status:'todo',subtasks:[],note:''},
-            {id:'t5',projectId:null,name:'Déclarer impôts',duration:30,locations:['Ordi'],priority:'Haute',status:'todo',subtasks:[],note:''}
+            {id:'t1',projectId:'p1',name:'Acheter le bois',duration:60,locations:['Boulot'],priority:'Haute',status:'done',doneAt:Date.now()-100000,archived:false,subtasks:[],note:'',dependsOn:null},
+            {id:'t2',projectId:'p1',name:'Monter les murs',duration:120,locations:['Jardin', 'Maison'],priority:'Moyenne',status:'todo',doneAt:null,archived:false,note:'Penser à vérifier le niveau',dependsOn:'t1',subtasks:[{id:'s1',name:'Découper planches',duration:30,locations:['Jardin'],priority:'Haute',status:'todo',doneAt:null,archived:false,note:'',dependsOn:null},{id:'s2',name:'Visser',duration:45,locations:['Jardin'],priority:'Basse',status:'todo',doneAt:null,archived:false,note:'',dependsOn:'s1'}]},
+            {id:'t3',projectId:'p2',name:'Prendre rdv garage',duration:15,locations:['Ordi', 'Maison'],priority:'Haute',status:'todo',doneAt:null,archived:false,subtasks:[],note:'',dependsOn:null},
+            {id:'t4',projectId:null,name:'Appeler le dentiste',duration:15,locations:['Maison', 'Boulot'],priority:'Basse',status:'todo',doneAt:null,archived:false,subtasks:[],note:'',dependsOn:null},
+            {id:'t5',projectId:null,name:'Déclarer impôts',duration:30,locations:['Ordi'],priority:'Haute',status:'todo',doneAt:null,archived:false,subtasks:[],note:'',dependsOn:null}
         ];
         
         // Migration of old data
         const migrateProjects = (projects) => {
             return projects.map(p => {
-                const newP = { ...p, category: p.category || '' };
+                const newP = { ...p, category: p.category || '', archived: !!p.archived };
                 delete newP.deadline;
                 return newP;
             });
         };
         const migrateTasks = (tasks) => {
             return tasks.map(t => {
-                const newTask = { ...t, locations: t.locations || [], note: t.note || '' };
+                const newTask = { ...t, locations: t.locations || [], note: t.note || '', noteImage: t.noteImage || null, dependsOn: t.dependsOn || null, archived: !!t.archived, doneAt: t.doneAt || (t.status === 'done' ? Date.now() : null) };
                 delete newTask.energy;
                 delete newTask.category;
                 delete newTask.deadline;
                 if (newTask.subtasks) {
                     newTask.subtasks = newTask.subtasks.map(s => {
-                        const newSub = { ...s, locations: s.locations || [], note: s.note || '' };
+                        const newSub = { ...s, locations: s.locations || [], note: s.note || '', noteImage: s.noteImage || null, dependsOn: s.dependsOn || null, archived: !!s.archived, doneAt: s.doneAt || (s.status === 'done' ? Date.now() : null) };
                         delete newSub.energy;
                         delete newSub.category;
                         delete newSub.deadline;
@@ -69,13 +66,20 @@
                 return newTask;
             });
         };
+        const migrateSettings = (settings) => {
+            if (settings && settings.categories && typeof settings.categories[0] === 'string') {
+                const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+                settings.categories = settings.categories.map((c, i) => ({name: c, color: colors[i%colors.length]}));
+            }
+            return settings;
+        };
 
         const AppState = {
             activeTab:'home',
-            settings: JSON.parse(localStorage.getItem('osdevie_settings')) || {
+            settings: migrateSettings(JSON.parse(localStorage.getItem('osdevie_settings'))) || {
                 times: [15, 30, 60, 120],
                 locations: ['Maison', 'Boulot', 'Ordi', 'Jardin'],
-                categories: ['Business', 'Famille']
+                categories: [{name:'Business',color:'#3b82f6'}, {name:'Famille',color:'#10b981'}]
             },
             projects: migrateProjects(JSON.parse(localStorage.getItem('osdevie_projects'))||INITIAL_PROJECTS),
             tasks: migrateTasks(JSON.parse(localStorage.getItem('osdevie_tasks'))||INITIAL_TASKS),
@@ -87,6 +91,7 @@
             showAddProject:false,
             bankFilter:'all',
             bankPriorityFilter:'all',
+            bankSearch:'',
             showProjectAddTaskModal: null,
             showProjectAddSubtaskModal: null,
             activeMenu: null,
@@ -105,8 +110,39 @@
                 this.render();
             },
             setTab(tab){AppState.activeTab=tab;this.render();},
+
+            // --- AUTO ARCHIVE ---
+            checkAutoArchive() {
+                const oneDay = 24 * 60 * 60 * 1000; // 24h
+                const now = Date.now();
+                let updated = false;
+
+                AppState.tasks.forEach(t => {
+                    if (t.status === 'done' && t.doneAt && now - t.doneAt > oneDay && !t.archived) {
+                        t.archived = true; updated = true;
+                    }
+                    if (t.subtasks) {
+                        t.subtasks.forEach(s => {
+                            if (s.status === 'done' && s.doneAt && now - s.doneAt > oneDay && !s.archived) {
+                                s.archived = true; updated = true;
+                            }
+                        });
+                    }
+                });
+                
+                AppState.projects.forEach(p => {
+                    const pTasks = AppState.tasks.filter(t => t.projectId === p.id);
+                    if (pTasks.length > 0 && pTasks.every(t => t.archived) && !p.archived) {
+                        // Project archived if all its tasks are archived
+                        p.archived = true; updated = true;
+                    }
+                });
+
+                if (updated) this.save();
+            },
             
-            addSetting(type, inputId) {
+            // --- SETTINGS LOGIC ---
+            addSetting(type, inputId, colorId = null) {
                 const input = document.getElementById(inputId);
                 let val = input.value.trim();
                 if (!val) return;
@@ -114,27 +150,48 @@
                 if (type === 'times') {
                     val = parseInt(val);
                     if (isNaN(val) || val <= 0) return;
+                    if (!AppState.settings[type].includes(val)) {
+                        AppState.settings[type].push(val);
+                        AppState.settings[type].sort((a,b) => a - b);
+                    }
+                } else if (type === 'categories') {
+                    const colorInput = document.getElementById(colorId);
+                    const color = colorInput ? colorInput.value : '#4b5563';
+                    if (!AppState.settings.categories.find(c => c.name.toLowerCase() === val.toLowerCase())) {
+                        AppState.settings.categories.push({name: val, color});
+                    }
+                } else {
+                    if (!AppState.settings[type].includes(val)) AppState.settings[type].push(val);
                 }
-
-                if (!AppState.settings[type].includes(val)) {
-                    AppState.settings[type].push(val);
-                    if (type === 'times') AppState.settings[type].sort((a,b) => a - b);
-                    this.save();
-                }
+                
+                this.save();
                 input.value = '';
             },
             removeSetting(type, val) {
-                AppState.settings[type] = AppState.settings[type].filter(item => item !== val);
-                if (type === 'times' && AppState.homeTime === val) AppState.homeTime = AppState.settings.times[0] || 0;
-                if (type === 'locations') AppState.homeLocations = AppState.homeLocations.filter(l => l !== val);
+                if (type === 'categories') {
+                    AppState.settings.categories = AppState.settings.categories.filter(c => c.name !== val);
+                } else {
+                    AppState.settings[type] = AppState.settings[type].filter(item => item !== val);
+                    if (type === 'times' && AppState.homeTime === val) AppState.homeTime = AppState.settings.times[0] || 0;
+                    if (type === 'locations') AppState.homeLocations = AppState.homeLocations.filter(l => l !== val);
+                }
                 this.save();
             },
+            getCategoryColor(catName) {
+                const cat = AppState.settings.categories.find(c => c.name === catName);
+                return cat ? cat.color : '#4b5563';
+            },
 
+            // --- MENU & MODALS LOGIC ---
             openMenu(e, type, id, parentId = null) {
                 if (e) { e.preventDefault(); e.stopPropagation(); }
                 AppState.activeMenu = { type, id, parentId };
                 this.render();
             },
+            closeMenu() {
+                AppState.activeMenu = null;
+                this.render();
+                },
             closeMenu() {
                 AppState.activeMenu = null;
                 this.render();
@@ -157,7 +214,49 @@
                 AppState.editPrompt = null;
                 this.render();
             },
+            
+            archiveItem(type, id, parentId = null) {
+                if (type === 'project') {
+                    AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, archived: true } : p);
+                    AppState.tasks = AppState.tasks.map(t => t.projectId === id ? { ...t, archived: true } : t);
+                } else if (type === 'task') {
+                    AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, archived: true } : t);
+                } else if (type === 'subtask') {
+                    AppState.tasks = AppState.tasks.map(t => {
+                        if (t.id === parentId) {
+                            return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, archived: true } : s) };
+                        }
+                        return t;
+                    });
+                }
+                AppState.activeMenu = null;
+                this.save();
+            },
 
+            // --- DEPENDENCY LOGIC ---
+            isBlocked(itemId) {
+                let item = null;
+                for (let t of AppState.tasks) {
+                    if (t.id === itemId) { item = t; break; }
+                    if (t.subtasks) {
+                        let s = t.subtasks.find(sub => sub.id === itemId);
+                        if (s) { item = s; break; }
+                    }
+                }
+                if (!item || !item.dependsOn) return false;
+                
+                let dep = null;
+                for (let t of AppState.tasks) {
+                    if (t.id === item.dependsOn) { dep = t; break; }
+                    if (t.subtasks) {
+                        let s = t.subtasks.find(sub => sub.id === item.dependsOn);
+                        if (s) { dep = s; break; }
+                    }
+                }
+                return dep && dep.status !== 'done';
+            },
+
+            // --- NOTE LOGIC ---
             openNote(type, id, parentId = null) {
                 let itemData = {};
                 if (type === 'project') itemData = AppState.projects.find(p => p.id === id);
@@ -167,7 +266,7 @@
                     itemData = parent.subtasks.find(s => s.id === id);
                 }
                 
-                AppState.notePrompt = { type, id, parentId, note: itemData.note || '' };
+                AppState.notePrompt = { type, id, parentId, note: itemData.note || '', image: itemData.noteImage || null, editMode: false };
                 AppState.activeMenu = null; 
                 this.render();
             },
@@ -175,19 +274,64 @@
                 AppState.notePrompt = null;
                 this.render();
             },
+            toggleNoteMode() {
+                if (AppState.notePrompt) {
+                    AppState.notePrompt.editMode = !AppState.notePrompt.editMode;
+                    this.render();
+                }
+            },
+            linkify(text) {
+                const urlRegex = /(https?:\/\/[^\s]+)/g;
+                return text.replace(urlRegex, function(url) {
+                    return '<a href="' + url + '" target="_blank" class="text-cyan-400 underline">' + url + '</a>';
+                }).replace(/\n/g, '<br>');
+            },
+            handleImageUpload(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 800;
+                        let width = img.width;
+                        let height = img.height;
+                        if (width > MAX_WIDTH) {
+                            height = height * (MAX_WIDTH / width);
+                            width = MAX_WIDTH;
+                        }
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        AppState.notePrompt.image = canvas.toDataURL('image/jpeg', 0.6);
+                        App.render();
+                    }
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            },
+            removeNoteImage() {
+                if(AppState.notePrompt) {
+                    AppState.notePrompt.image = null;
+                    this.render();
+                }
+            },
             saveNote(event) {
                 event.preventDefault();
                 const { type, id, parentId } = AppState.notePrompt;
                 const noteText = document.getElementById('edit-note-text').value;
+                const noteImage = AppState.notePrompt.image;
 
                 if (type === 'project') {
-                    AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, note: noteText } : p);
+                    AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, note: noteText, noteImage } : p);
                 } else if (type === 'task') {
-                    AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, note: noteText } : t);
+                    AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, note: noteText, noteImage } : t);
                 } else if (type === 'subtask') {
                     AppState.tasks = AppState.tasks.map(t => {
                         if (t.id === parentId) {
-                            return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, note: noteText } : s) };
+                            return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, note: noteText, noteImage } : s) };
                         }
                         return t;
                     });
@@ -237,18 +381,20 @@
                 } else if (type === 'task') {
                     const projectId = document.getElementById('edit-project').value || null;
                     const duration = parseInt(document.getElementById('edit-duration').value);
+                    const dependsOn = document.getElementById('edit-dependency').value || null;
                     const locations = this.getFormLocations(form);
                     const priorityBtn = form.querySelector('.edit-priority-selected');
                     const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
-                    AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, locations, priority } : t);
+                    AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, locations, priority, dependsOn } : t);
                 } else if (type === 'subtask') {
                     const duration = parseInt(document.getElementById('edit-sub-duration').value);
+                    const dependsOn = document.getElementById('edit-dependency').value || null;
                     const locations = this.getFormLocations(form);
                     const priorityBtn = form.querySelector('.edit-sub-priority-selected');
                     const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
                     AppState.tasks = AppState.tasks.map(t => {
                         if (t.id === parentId) {
-                            return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, locations, priority } : s) };
+                            return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, locations, priority, dependsOn } : s) };
                         }
                         return t;
                     });
@@ -304,14 +450,16 @@
             },
             
             toggleTask(taskId){
-                AppState.tasks=AppState.tasks.map(t=>t.id===taskId?{...t,status:t.status==='todo'?'done':'todo'}:t);
+                if(this.isBlocked(taskId)) return; // prevent toggle if blocked
+                AppState.tasks=AppState.tasks.map(t=>t.id===taskId?{...t,status:t.status==='todo'?'done':'todo',doneAt:t.status==='todo'?Date.now():null}:t);
                 if(AppState.homeSearched)this.generateAction();
                 this.save();
             },
             toggleSubtask(taskId,subtaskId){
+                if(this.isBlocked(subtaskId)) return; // prevent toggle if blocked
                 AppState.tasks=AppState.tasks.map(t=>{
                     if(t.id===taskId){
-                        return{...t,subtasks:t.subtasks.map(s=>s.id===subtaskId?{...s,status:s.status==='todo'?'done':'todo'}:s)}
+                        return{...t,subtasks:t.subtasks.map(s=>s.id===subtaskId?{...s,status:s.status==='todo'?'done':'todo',doneAt:s.status==='todo'?Date.now():null}:s)}
                     }
                     return t;
                 });
@@ -328,7 +476,7 @@
                 const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
                 
                 if(!name.trim())return;
-                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId||null,duration:parseInt(duration),locations,priority,status:'todo',subtasks:[],note:''});
+                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId||null,duration:parseInt(duration),locations,priority,status:'todo',doneAt:null,archived:false,subtasks:[],note:'',noteImage:null,dependsOn:null});
                 
                 document.getElementById('new-task-name').value = '';
                 this.save();
@@ -338,7 +486,7 @@
                 if(!input) return;
                 const name = input.value;
                 if(!name.trim())return;
-                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId,duration:15,locations:[],priority:'Moyenne',status:'todo',subtasks:[],note:''});
+                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId,duration:15,locations:[],priority:'Moyenne',status:'todo',doneAt:null,archived:false,subtasks:[],note:'',noteImage:null,dependsOn:null});
                 AppState.showProjectAddTaskModal = null;
                 this.save();
             },
@@ -349,7 +497,7 @@
                 if(!name.trim())return;
                 AppState.tasks = AppState.tasks.map(t => {
                     if(t.id === taskId) {
-                        return {...t, subtasks: [...(t.subtasks||[]), {id: Date.now().toString(), name, duration: 15, locations: [], priority: 'Moyenne', status: 'todo', note: ''}]};
+                        return {...t, subtasks: [...(t.subtasks||[]), {id: Date.now().toString(), name, duration: 15, locations: [], priority: 'Moyenne', status: 'todo', doneAt:null, archived:false, note: '', noteImage:null, dependsOn:null}]};
                     }
                     return t;
                 });
@@ -360,7 +508,7 @@
                 const name=document.getElementById('new-proj-name').value;
                 const category=document.getElementById('new-proj-category').value;
                 if(!name.trim())return;
-                AppState.projects.push({id:Date.now().toString(),name,category,note:''});
+                AppState.projects.push({id:Date.now().toString(),name,category,note:'',noteImage:null,archived:false});
                 AppState.showAddProject=false;
                 this.save();
             },
@@ -374,19 +522,24 @@
                 }
                 this.render();
             },
+            setSearch(val) {
+                AppState.bankSearch = val;
+                this.render();
+            },
             
             generateAction(){
                 const priorityWeights={'Haute':3,'Moyenne':2,'Basse':1};
                 let allAvailable = [];
                 
                 AppState.tasks.forEach(t => {
+                    if (t.archived) return;
                     let hasActiveSubtasks = false;
                     
                     if (t.subtasks && t.subtasks.length > 0) {
                         t.subtasks.forEach(s => {
-                            if (s.status !== 'done') {
+                            if (s.status !== 'done' && !s.archived) {
                                 hasActiveSubtasks = true;
-                                if (s.duration <= AppState.homeTime) {
+                                if (!this.isBlocked(s.id) && s.duration <= AppState.homeTime) {
                                     let matchLoc = true;
                                     if (AppState.homeLocations.length > 0) {
                                         if (!s.locations || s.locations.length === 0) matchLoc = false;
@@ -398,9 +551,9 @@
                                 }
                             }
                         });
-                        }
+                    }
                     
-                    if (!hasActiveSubtasks && t.status !== 'done' && t.duration <= AppState.homeTime) {
+                    if (!hasActiveSubtasks && t.status !== 'done' && !this.isBlocked(t.id) && t.duration <= AppState.homeTime) {
                         let matchLoc = true;
                         if (AppState.homeLocations.length > 0) {
                             if (!t.locations || t.locations.length === 0) matchLoc = false;
@@ -413,17 +566,17 @@
                 });
                 
                 allAvailable.sort((a,b)=> {
-                    // 1. Durée (descendante : les plus longues qui rentrent dans le temps imparti d'abord)
+                    // 1. Durée (descendante)
                     const dA = a.duration || 15;
                     const dB = b.duration || 15;
                     if (dA !== dB) return dB - dA;
                     
-                    // 2. Priorité (Haute > Moyenne > Basse)
+                    // 2. Priorité
                     const pA = priorityWeights[a.priority || 'Moyenne'];
                     const pB = priorityWeights[b.priority || 'Moyenne'];
                     if (pA !== pB) return pB - pA;
                     
-                    // 3. Sous-tâches en priorité (si même durée et même priorité)
+                    // 3. Sous-tâches en priorité
                     if (a.isSubtask && !b.isSubtask) return -1;
                     if (!a.isSubtask && b.isSubtask) return 1;
                     
@@ -495,6 +648,7 @@
                 const argParent = isSubtask ? `, '${parentId}'` : '';
                 const priorityColors = {'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
                 const hasLocations = task.locations && task.locations.length > 0;
+                const blocked = this.isBlocked(task.id);
                 
                 let projectName = '';
                 if (task.projectId) {
@@ -510,9 +664,9 @@
                      ondragover="App.handleDragOver(event)" 
                      ondragleave="App.handleDragLeave(event)" 
                      ondrop="App.handleDrop(event, '${task.id}', '${type}'${argParent})"
-                     class="draggable-item group flex items-center justify-between p-4 rounded-2xl cursor-grab transition-all duration-300 border ${isDone?'bg-[#13161c] border-gray-800/30 opacity-60':'bg-[#1A1D24] border-gray-800 hover:border-gray-700'}">
+                     class="draggable-item group flex items-center justify-between p-4 rounded-2xl cursor-grab transition-all duration-300 border ${isDone?'bg-[#13161c] border-gray-800/30 opacity-60':'bg-[#1A1D24] border-gray-800 hover:border-gray-700'} ${blocked?'opacity-50':''}">
                     <div class="flex items-center gap-4 overflow-hidden flex-1">
-                        <button onclick="${isSubtask ? `App.toggleSubtask('${parentId}','${task.id}')` : `App.toggleTask('${task.id}')`}; event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer p-1 -ml-1">
+                        <button onclick="${isSubtask ? `App.toggleSubtask('${parentId}','${task.id}')` : `App.toggleTask('${task.id}')`}; event.stopPropagation();" class="shrink-0 focus:outline-none ${blocked?'cursor-not-allowed':'cursor-pointer'} p-1 -ml-1">
                             ${isDone?'<i data-lucide="check-circle-2" class="text-emerald-500"></i>':'<i data-lucide="circle" class="text-gray-600"></i>'}
                         </button>
                         <div class="flex-1 min-w-0">
@@ -521,7 +675,8 @@
                                 <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ${task.duration}m</span>
                                 ${hasLocations ? `<span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3 text-emerald-400"></i> ${task.locations.join(', ')}</span>` : ''}
                                 <span class="px-2 py-0.5 rounded-md text-[10px] border font-bold ${priorityColors[task.priority || 'Moyenne']}">${task.priority || 'Moyenne'}</span>
-                                ${task.note ? `<span onclick="App.openNote('${type}', '${task.id}'${argParent}); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
+                                ${task.note || task.noteImage ? `<span onclick="App.openNote('${type}', '${task.id}'${argParent}); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
+                                ${blocked ? `<span class="flex items-center text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/30" title="En attente d'une autre tâche"><i data-lucide="lock" class="w-3 h-3"></i></span>` : ''}
                             </div>
                             ${projectName && !isSubtask ? `<div class="text-[10px] text-cyan-500/70 font-semibold flex items-center gap-1 mt-1 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Tâche du projet : ${projectName}</div>` : ''}
                             ${isSubtask && parentName ? `<div class="text-[10px] text-cyan-500/70 font-semibold flex items-center gap-1 mt-1 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Sous-tâche de : ${parentName} ${projectName ? `(${projectName})` : ''}</div>` : ''}
@@ -545,57 +700,57 @@
                 const priorityWeights={'Haute':3,'Moyenne':2,'Basse':1};
                 
                 AppState.tasks.forEach(t => {
+                    if(t.archived) return;
                     let hasActiveSubtasks = false;
                     if (t.subtasks && t.subtasks.length > 0) {
                         t.subtasks.forEach(s => {
-                            if (s.status !== 'done') {
+                            if (s.status !== 'done' && !s.archived && !this.isBlocked(s.id)) {
                                 hasActiveSubtasks = true;
                                 allActive.push({...s, isSubtask: true, parentId: t.id, parentName: t.name, projectId: t.projectId});
                             }
                         });
                     }
-                    if (!hasActiveSubtasks && t.status !== 'done') {
+                    if (!hasActiveSubtasks && t.status !== 'done' && !this.isBlocked(t.id)) {
                         allActive.push({...t, isSubtask: false, projectId: t.projectId});
                     }
                 });
 
                 const urgencies = allActive.sort((a, b) => {
-                    // 1. Priorité (Haute > Moyenne > Basse)
                     const pA = priorityWeights[a.priority || 'Moyenne'];
                     const pB = priorityWeights[b.priority || 'Moyenne'];
                     if (pA !== pB) return pB - pA;
-                    
-                    // 2. Durée (le plus court en premier)
                     const dA = a.duration || 15;
                     const dB = b.duration || 15;
                     return dA - dB;
                 }).slice(0, 5);
 
-                const categoryStats = AppState.settings.categories.map(cat => {
-                    const catProjects = AppState.projects.filter(p => p.category === cat);
+                const categoryStats = AppState.settings.categories.map(catObj => {
+                    const cat = catObj.name;
+                    const catProjects = AppState.projects.filter(p => p.category === cat && !p.archived);
                     const total = catProjects.length;
                     let done = 0;
 
                     catProjects.forEach(p => {
-                        const projectTasks = AppState.tasks.filter(t => t.projectId === p.id);
+                        const projectTasks = AppState.tasks.filter(t => t.projectId === p.id && !t.archived);
                         let tTotal = 0, tComp = 0;
                         projectTasks.forEach(t => {
                             tTotal++; if (t.status === 'done') tComp++;
                             if (t.subtasks) {
-                                t.subtasks.forEach(s => { tTotal++; if (s.status === 'done') tComp++; });
+                                t.subtasks.forEach(s => { 
+                                    if(!s.archived){ tTotal++; if (s.status === 'done') tComp++; }
+                                });
                             }
                         });
                         if (tTotal > 0 && tTotal === tComp) done++;
                     });
 
                     const percent = total === 0 ? 0 : Math.round((done / total) * 100);
-                    return { cat, total, done, percent };
+                    return { cat, color: catObj.color, total, done, percent };
                 });
 
                 return `
                 <div class="space-y-8">
                     <section class="bg-[#1A1D24] rounded-3xl p-5 border border-gray-800/50 relative">
-                        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-emerald-500"></div>
                         <h2 class="text-lg font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="play" class="text-cyan-400 fill-cyan-400 w-5 h-5"></i> Moteur d'Action</h2>
                         <div class="space-y-4">
                             <div><label class="text-xs font-semibold text-gray-400 uppercase mb-2 block">Temps dispo (min)</label>
@@ -632,7 +787,7 @@
                                         <span class="text-xs font-semibold text-gray-500">${stat.done} projet(s) sur ${stat.total} (${stat.percent}%)</span>
                                     </div>
                                     <div class="h-2 w-full bg-[#0D0F12] rounded-full overflow-hidden border border-gray-800/50">
-                                        <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000" style="width: ${stat.percent}%"></div>
+                                        <div class="h-full rounded-full transition-all duration-1000" style="width: ${stat.percent}%; background-color: ${stat.color}; box-shadow: 0 0 10px ${stat.color}80;"></div>
                                     </div>
                                 </div>
                             `).join('')}
@@ -642,7 +797,7 @@
             },
             
             renderProjects(){
-                let html=`<div class="space-y-4"><div class="flex justify-between items-center mb-6 px-1"><h2 class="text-xl font-black text-white">Grands Chantiers</h2><button onclick="App.toggleAddProject()" class="h-8 w-8 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center border border-cyan-500/30"><i data-lucide="plus" class="w-4 h-4"></i></button></div>`;
+                let html=`<div class="space-y-4"><div class="flex justify-between items-center mb-6 px-1"><h2 class="text-xl font-black text-white">Projets</h2><button onclick="App.toggleAddProject()" class="h-8 w-8 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center border border-cyan-500/30"><i data-lucide="plus" class="w-4 h-4"></i></button></div>`;
                 
                 if(AppState.showAddProject)html+=`
                     <div class="bg-[#1A1D24] p-4 rounded-2xl border border-cyan-500/30 mb-4 flex flex-col gap-3">
@@ -650,22 +805,22 @@
                         <div class="flex gap-2">
                             <select id="new-proj-category" class="flex-1 bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-gray-300 border border-gray-800 focus:outline-none">
                                 <option value="">Catégorie : Aucune</option>
-                                ${AppState.settings.categories.map(c=>`<option value="${c}">${c}</option>`).join('')}
+                                ${AppState.settings.categories.map(c=>`<option value="${c.name}">${c.name}</option>`).join('')}
                             </select>
                             <button onclick="App.addProject()" class="bg-cyan-500 text-black px-4 py-2 rounded-lg text-sm font-bold">OK</button>
                         </div>
                     </div>`;
                 
-                html+=AppState.projects.map(project=>{
-                    const projectTasks=AppState.tasks.filter(t=>t.projectId===project.id);
+                html+=AppState.projects.filter(p => !p.archived).map(project=>{
+                    const projectTasks=AppState.tasks.filter(t=>t.projectId===project.id && !t.archived);
                     let total=0,comp=0;
                     projectTasks.forEach(t=>{
                         total++;if(t.status==='done')comp++;
-                        if(t.subtasks){t.subtasks.forEach(s=>{total++;if(s.status==='done')comp++})}
+                        if(t.subtasks){t.subtasks.forEach(s=>{ if(!s.archived){total++;if(s.status==='done')comp++;} })}
                     });
                     const prog=total===0?0:Math.round((comp/total)*100);
                     const exp=AppState.expandedProjectId===project.id;
-                    const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
+                    const catColor = this.getCategoryColor(project.category);
                     
                     return `
                     <div class="bg-[#1A1D24] rounded-2xl border border-gray-800 overflow-hidden">
@@ -675,8 +830,8 @@
                                     <div class="p-2 rounded-xl ${prog===100?'bg-emerald-500/20 text-emerald-400':'bg-cyan-500/20 text-cyan-400'} shrink-0"><i data-lucide="folder" class="w-5 h-5 fill-current opacity-50"></i></div>
                                     <div class="flex-1 min-w-0 flex items-center flex-wrap gap-y-1">
                                         <h3 class="font-bold text-lg truncate ${prog===100?'text-gray-400 line-through':'text-white'}">${project.name}</h3>
-                                        ${project.category ? `<span class="px-2 py-0.5 rounded text-[10px] border border-gray-700 bg-gray-800 text-gray-300 ml-2">${project.category}</span>` : ''}
-                                        ${project.note ? `<span onclick="App.openNote('project', '${project.id}'); event.stopPropagation();" class="text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 p-1 rounded-md border border-amber-500/30 ml-2 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
+                                        ${project.category ? `<span class="px-2 py-0.5 rounded text-[10px] border ml-2" style="border-color:${catColor}50;background-color:${catColor}15;color:${catColor}">${project.category}</span>` : ''}
+                                        ${project.note || project.noteImage ? `<span onclick="App.openNote('project', '${project.id}'); event.stopPropagation();" class="text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 p-1 rounded-md border border-amber-500/30 ml-2 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-1 shrink-0 ml-2">
@@ -718,7 +873,7 @@
                                         </div>
                                     `:''}
 
-                                    ${task.subtasks&&task.subtasks.length>0?`<div class="ml-8 space-y-1.5 border-l border-gray-800 pl-3">${task.subtasks.map(sub=>`
+                                    ${task.subtasks&&task.subtasks.length>0?`<div class="ml-8 space-y-1.5 border-l border-gray-800 pl-3">${task.subtasks.filter(s=>!s.archived).map(sub=>`
                                         <div draggable="true" 
                                              onclick="App.handleRowTap('${task.projectId}')"
                                              ondragstart="App.handleDragStart(event, '${sub.id}', 'subtask', '${task.id}')" 
@@ -726,7 +881,7 @@
                                              ondragover="App.handleDragOver(event)" 
                                              ondragleave="App.handleDragLeave(event)" 
                                              ondrop="App.handleDrop(event, '${sub.id}', 'subtask', '${task.id}')"
-                                             class="draggable-item flex items-center justify-between py-2 px-2.5 rounded-lg bg-[#13161c] border border-gray-800/40 hover:bg-[#1A1D24] transition-colors">
+                                             class="draggable-item flex items-center justify-between py-2 px-2.5 rounded-lg bg-[#13161c] border border-gray-800/40 hover:bg-[#1A1D24] transition-colors ${this.isBlocked(sub.id)?'opacity-50':''}">
                                             <div class="flex items-center gap-2 flex-1 min-w-0">
                                                 <button onclick="App.toggleSubtask('${task.id}','${sub.id}'); event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer p-1 -ml-1">
                                                     <i data-lucide="${sub.status==='done'?'check-circle-2':'circle'}" class="${sub.status==='done'?'text-emerald-500':'text-gray-600'} w-3.5 h-3.5"></i>
@@ -737,7 +892,8 @@
                                                         <span><i data-lucide="clock" class="w-2.5 h-2.5 inline"></i> ${sub.duration || 15}m</span>
                                                         ${sub.locations && sub.locations.length > 0 ? `<span><i data-lucide="map-pin" class="w-2.5 h-2.5 inline text-emerald-400"></i> ${sub.locations.join(', ')}</span>` : ''}
                                                         <span class="px-1.5 py-0.2 rounded text-[9px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>
-                                                        ${sub.note ? `<span onclick="App.openNote('subtask', '${sub.id}', '${task.id}'); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-2.5 h-2.5"></i></span>` : ''}
+                                                        ${sub.note || sub.noteImage ? `<span onclick="App.openNote('subtask', '${sub.id}', '${task.id}'); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-2.5 h-2.5"></i></span>` : ''}
+                                                        ${this.isBlocked(sub.id) ? `<span class="flex items-center text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/30" title="En attente"><i data-lucide="lock" class="w-2 h-2"></i></span>` : ''}
                                                     </div>
                                                 </div>
                                             </div>
@@ -754,11 +910,22 @@
             },
             
             renderBank(){
+                const s = AppState.bankSearch.toLowerCase();
                 const filteredTasks = AppState.tasks.filter(t => {
+                    if(AppState.bankFilter !== 'archived' && t.archived) return false;
+                    if(AppState.bankFilter === 'archived' && !t.archived) return false;
+                    
                     if(AppState.bankFilter === 'isolated' && (t.projectId !== null || t.status === 'done')) return false;
                     if(AppState.bankFilter === 'done' && t.status !== 'done') return false;
                     if(AppState.bankFilter === 'all' && t.status === 'done') return false;
                     if(AppState.bankPriorityFilter !== 'all' && t.priority !== AppState.bankPriorityFilter) return false;
+                    
+                    if (s) {
+                        const matchT = t.name.toLowerCase().includes(s);
+                        const matchS = t.subtasks && t.subtasks.some(sub => sub.name.toLowerCase().includes(s));
+                        if (!matchT && !matchS) return false;
+                    }
+                    
                     return true;
                 });
 
@@ -771,10 +938,14 @@
                         bankListHtml += this.renderTask(task, true);
                         
                         if (task.subtasks && task.subtasks.length > 0) {
-                            const activeSubs = task.subtasks.filter(s => {
-                                if (AppState.bankFilter === 'done') return s.status === 'done';
-                                if (AppState.bankPriorityFilter !== 'all' && s.priority !== AppState.bankPriorityFilter) return false;
-                                return s.status !== 'done';
+                            const activeSubs = task.subtasks.filter(sub => {
+                                if (AppState.bankFilter !== 'archived' && sub.archived) return false;
+                                if (AppState.bankFilter === 'archived' && !sub.archived) return false;
+                                if (AppState.bankFilter === 'done' && sub.status !== 'done') return false;
+                                if (AppState.bankFilter !== 'done' && AppState.bankFilter !== 'archived' && sub.status === 'done') return false;
+                                if (AppState.bankPriorityFilter !== 'all' && sub.priority !== AppState.bankPriorityFilter) return false;
+                                if (s && !sub.name.toLowerCase().includes(s) && !task.name.toLowerCase().includes(s)) return false;
+                                return true;
                             });
                             if (activeSubs.length > 0) {
                                 const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
@@ -782,10 +953,11 @@
                                 bankListHtml += `<div class="ml-4 mt-2 space-y-2 border-l-2 border-gray-800/50 pl-3">`;
                                 activeSubs.forEach(sub => {
                                     const isSubDone = sub.status === 'done';
+                                    const blocked = this.isBlocked(sub.id);
                                     bankListHtml += `
-                                    <div class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-800/50 hover:border-gray-700 transition-all ${isSubDone ? 'opacity-60' : ''}" onclick="App.handleRowTap('${task.projectId}')">
+                                    <div class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-800/50 hover:border-gray-700 transition-all ${isSubDone ? 'opacity-60' : ''} ${blocked?'opacity-50':''}" onclick="App.handleRowTap('${task.projectId}')">
                                         <div class="flex items-center gap-3 flex-1 min-w-0">
-                                            <button onclick="App.toggleSubtask('${task.id}','${sub.id}'); event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer p-1 -ml-1">
+                                            <button onclick="App.toggleSubtask('${task.id}','${sub.id}'); event.stopPropagation();" class="shrink-0 focus:outline-none ${blocked?'cursor-not-allowed':'cursor-pointer'} p-1 -ml-1">
                                                 <i data-lucide="${isSubDone ? 'check-circle-2' : 'circle'}" class="${isSubDone ? 'text-emerald-500' : 'text-gray-600'} w-4 h-4"></i>
                                             </button>
                                             <div class="flex-1 min-w-0">
@@ -794,7 +966,8 @@
                                                     <span><i data-lucide="clock" class="w-3 h-3 inline"></i> ${sub.duration || 15}m</span>
                                                     ${sub.locations && sub.locations.length > 0 ? `<span><i data-lucide="map-pin" class="w-3 h-3 inline text-emerald-400"></i> ${sub.locations.join(', ')}</span>` : ''}
                                                     <span class="px-1.5 py-0.2 rounded text-[9px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>
-                                                    ${sub.note ? `<span onclick="App.openNote('subtask', '${sub.id}', '${task.id}'); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
+                                                    ${sub.note || sub.noteImage ? `<span onclick="App.openNote('subtask', '${sub.id}', '${task.id}'); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
+                                                    ${blocked ? `<span class="flex items-center text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/30" title="En attente"><i data-lucide="lock" class="w-2 h-2"></i></span>` : ''}
                                                 </div>
                                                 <div class="text-[10px] text-cyan-500/70 font-semibold flex items-center gap-1 mt-0.5 truncate">
                                                     <i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> 
@@ -816,7 +989,7 @@
 
                 return `
                 <div class="space-y-6">
-                    <section class="bg-gradient-to-br from-[#1A1D24] to-[#13161c] rounded-3xl p-5 border border-gray-800">
+                <section class="bg-gradient-to-br from-[#1A1D24] to-[#13161c] rounded-3xl p-5 border border-gray-800">
                         <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2"><i data-lucide="plus" class="text-emerald-400 w-4 h-4"></i> Ajout Rapide</h2>
                         <form onsubmit="App.addTask(event)" class="space-y-4">
                             <input type="text" id="new-task-name" placeholder="Que faut-il faire ?" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800">
@@ -824,7 +997,7 @@
                             <div class="flex gap-2">
                                 <select id="new-task-project" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800">
                                     <option value="">Projet : Aucun</option>
-                                    ${AppState.projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}
+                                    ${AppState.projects.filter(p=>!p.archived).map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}
                                 </select>
                                 <select id="new-task-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center">
                                     ${AppState.settings.times.map(t => `<option value="${t}">${t}m</option>`).join('')}
@@ -848,14 +1021,19 @@
                                     <button onclick="App.setBankFilter('all')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='all'?'bg-gray-700 text-white':'bg-[#1A1D24] text-gray-500'}">Actives</button>
                                     <button onclick="App.setBankFilter('isolated')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='isolated'?'bg-gray-700 text-white':'bg-[#1A1D24] text-gray-500'}">Isolées</button>
                                     <button onclick="App.setBankFilter('done')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='done'?'bg-emerald-600 text-white':'bg-[#1A1D24] text-gray-500'}">Effectuée</button>
+                                    <button onclick="App.setBankFilter('archived')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='archived'?'bg-red-600 text-white':'bg-[#1A1D24] text-gray-500'}">Archives</button>
                                 </div>
                             </div>
-                            <div class="flex gap-1 items-center overflow-x-auto pb-1">
+                            <div class="flex gap-1 items-center overflow-x-auto pb-1 mt-1">
                                 <span class="text-[10px] text-gray-500 uppercase font-bold mr-1">Priorité:</span>
                                 <button onclick="App.setBankPriorityFilter('all')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='all'?'bg-cyan-500/20 text-cyan-400':'bg-[#1A1D24] text-gray-500'}">Toutes</button>
                                 <button onclick="App.setBankPriorityFilter('Haute')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Haute'?'bg-purple-500/20 text-purple-400':'bg-[#1A1D24] text-gray-500'}">Haute</button>
                                 <button onclick="App.setBankPriorityFilter('Moyenne')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Moyenne'?'bg-amber-500/20 text-amber-400':'bg-[#1A1D24] text-gray-500'}">Moyenne</button>
                                 <button onclick="App.setBankPriorityFilter('Basse')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Basse'?'bg-blue-500/20 text-blue-400':'bg-[#1A1D24] text-gray-500'}">Basse</button>
+                            </div>
+                            <div class="mt-2 relative">
+                                <i data-lucide="search" class="absolute left-3 top-2.5 text-gray-500 w-4 h-4"></i>
+                                <input type="text" placeholder="Rechercher une tâche..." value="${AppState.bankSearch}" oninput="App.setSearch(this.value)" class="w-full bg-[#1A1D24] rounded-xl pl-9 pr-4 py-2 text-sm text-white focus:outline-none border border-gray-800 focus:border-cyan-500">
                             </div>
                         </div>
                         <div class="pb-10">${bankListHtml}</div>
@@ -878,12 +1056,19 @@
                               type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Lieux' : 
                               '<i data-lucide="tag" class="text-indigo-400 w-4 h-4"></i> Catégories'}
                         </h3>
-                        <div class="flex gap-2 mb-4">
+                        <div class="flex gap-2 mb-4 items-center">
                             <input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800">
-                            <button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button>
+                            ${type === 'categories' ? `<input type="color" id="setting-color-categories" value="#3b82f6" class="w-10 h-10 rounded-xl bg-transparent border-none cursor-pointer">` : ''}
+                            <button onclick="App.addSetting('${type}', 'setting-input-${type}'${type === 'categories' ? `, 'setting-color-categories'` : ''})" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button>
                         </div>
                         <div class="flex flex-wrap gap-2">
-                            ${AppState.settings[type].map(item => `
+                            ${type === 'categories' ? AppState.settings.categories.map(item => `
+                                <div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300">
+                                    <div class="w-2.5 h-2.5 rounded-full" style="background-color: ${item.color}"></div>
+                                    <span>${item.name}</span>
+                                    <button onclick="App.removeSetting('${type}', '${item.name}')" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+                                </div>
+                            `).join('') : AppState.settings[type].map(item => `
                                 <div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300">
                                     <span>${item}</span>
                                     <button onclick="App.removeSetting('${type}', ${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
@@ -933,6 +1118,9 @@
                                     <button onclick="App.openNote('${AppState.activeMenu.type}', '${AppState.activeMenu.id}', ${AppState.activeMenu.parentId ? `'${AppState.activeMenu.parentId}'` : 'null'})" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3">
                                         <i data-lucide="file-text" class="text-amber-400 w-5 h-5"></i> Gérer la note
                                     </button>
+                                    <button onclick="App.archiveItem('${AppState.activeMenu.type}', '${AppState.activeMenu.id}', ${AppState.activeMenu.parentId ? `'${AppState.activeMenu.parentId}'` : 'null'})" class="w-full text-left px-6 py-4 text-orange-400 font-bold hover:bg-[#1f232b] flex items-center gap-3">
+                                        <i data-lucide="archive" class="w-5 h-5"></i> Archiver
+                                    </button>
                                     <button onclick="App.openDelete()" class="w-full text-left px-6 py-4 text-red-500 font-bold hover:bg-[#1f232b] flex items-center gap-3">
                                         <i data-lucide="trash-2" class="w-5 h-5"></i> Supprimer
                                     </button>
@@ -944,25 +1132,74 @@
                             </div>
                     `;
                 } else if (AppState.notePrompt) {
-                    modalContainer.innerHTML = `
-                        <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeNote()">
-                            <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
-                                <h3 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="file-text" class="text-amber-400"></i> Note</h3>
-                                <form onsubmit="App.saveNote(event)" class="space-y-4">
-                                    <textarea id="edit-note-text" rows="6" class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-amber-500 focus:outline-none placeholder-gray-600" placeholder="Écris ta note ici...">${AppState.notePrompt.note}</textarea>
-                                    <div class="flex gap-3 mt-4">
-                                        <button type="button" onclick="App.closeNote()" class="flex-1 py-3 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button>
-                                        <button type="submit" class="flex-1 py-3 rounded-xl bg-amber-500 text-black font-bold">Enregistrer</button>
-                                    </div>
-                                </form>
+                    const n = AppState.notePrompt;
+                    if (n.editMode) {
+                        modalContainer.innerHTML = `
+                            <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeNote()">
+                                <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
+                                    <h3 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="file-text" class="text-amber-400"></i> Éditer la note</h3>
+                                    <form onsubmit="App.saveNote(event)" class="space-y-4">
+                                        <textarea id="edit-note-text" rows="6" class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-amber-500 focus:outline-none placeholder-gray-600" placeholder="Écris ta note, ajoute des liens...">${n.note}</textarea>
+                                        
+                                        <div class="border border-dashed border-gray-700 rounded-xl p-4 text-center relative hover:bg-[#0D0F12] transition-colors">
+                                            ${n.image ? `
+                                                <div class="relative inline-block">
+                                                    <img src="${n.image}" class="max-h-32 rounded-lg" />
+                                                    <button type="button" onclick="App.removeNoteImage()" class="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full"><i data-lucide="x" class="w-3 h-3"></i></button>
+                                                </div>
+                                            ` : `
+                                                <input type="file" accept="image/*" onchange="App.handleImageUpload(event)" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                                                <div class="text-gray-500 flex flex-col items-center gap-1">
+                                                    <i data-lucide="image" class="w-6 h-6 text-gray-600"></i>
+                                                    <span class="text-xs">Ajouter une image</span>
+                                                </div>
+                                            `}
+                                        </div>
+
+                                        <div class="flex gap-3 mt-4">
+                                            <button type="button" onclick="App.toggleNoteMode()" class="flex-1 py-3 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button>
+                                            <button type="submit" class="flex-1 py-3 rounded-xl bg-amber-500 text-black font-bold">Enregistrer</button>
+                                        </div>
+                                    </form>
+                                </div>
                             </div>
-                        </div>
-                    `;
+                        `;
+                    } else {
+                        modalContainer.innerHTML = `
+                            <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeNote()">
+                                <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
+                                    <div class="flex justify-between items-center mb-4">
+                                        <h3 class="text-xl font-bold text-white flex items-center gap-2"><i data-lucide="file-text" class="text-amber-400"></i> Note</h3>
+                                        <button onclick="App.toggleNoteMode()" class="p-2 bg-[#0D0F12] rounded-xl text-gray-400 hover:text-white border border-gray-800"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                                    </div>
+                                    <div class="space-y-4 max-h-96 overflow-y-auto pr-2">
+                                        ${n.note ? `<div class="text-gray-300 text-sm whitespace-pre-wrap note-content leading-relaxed">${this.linkify(n.note)}</div>` : '<p class="text-gray-600 text-sm italic">Aucune note...</p>'}
+                                        ${n.image ? `<img src="${n.image}" class="w-full rounded-xl border border-gray-800" />` : ''}
+                                    </div>
+                                    <div class="mt-6">
+                                        <button type="button" onclick="App.closeNote()" class="w-full py-3 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Fermer</button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
                 } else if (AppState.editPrompt) {
                     const d = AppState.editPrompt.data;
                     const dLocs = d.locations || [];
                     const dCat = d.category || '';
                     
+                    let depOptions = `<option value="">Aucune</option>`;
+                    if (AppState.editPrompt.type !== 'project') {
+                        AppState.tasks.filter(t => !t.archived && t.id !== d.id && t.status !== 'done').forEach(t => {
+                            depOptions += `<option value="${t.id}" ${t.id === d.dependsOn ? 'selected' : ''}>Tâche : ${t.name}</option>`;
+                            if (t.subtasks) {
+                                t.subtasks.filter(s => !s.archived && s.id !== d.id && s.status !== 'done').forEach(s => {
+                                    depOptions += `<option value="${s.id}" ${s.id === d.dependsOn ? 'selected' : ''}>Sous-tâche : ${s.name}</option>`;
+                                });
+                            }
+                        });
+                        }
+
                     modalContainer.innerHTML = `
                         <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeEdit()">
                             <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
@@ -973,7 +1210,7 @@
                                     ${AppState.editPrompt.type === 'project' ? `
                                         <select id="edit-proj-category" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none">
                                             <option value="">Catégorie : Aucune</option>
-                                            ${AppState.settings.categories.map(c => `<option value="${c}" ${c === dCat ? 'selected' : ''}>${c}</option>`).join('')}
+                                            ${AppState.settings.categories.map(c => `<option value="${c.name}" ${c.name === dCat ? 'selected' : ''}>${c.name}</option>`).join('')}
                                         </select>
                                     ` : ''}
 
@@ -981,10 +1218,16 @@
                                     <div class="flex gap-2">
                                         <select id="edit-project" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none">
                                             <option value="">Projet : Aucun</option>
-                                            ${AppState.projects.map(p => `<option value="${p.id}" ${p.id === d.projectId ? 'selected' : ''}>${p.name}</option>`).join('')}
+                                            ${AppState.projects.filter(p=>!p.archived).map(p => `<option value="${p.id}" ${p.id === d.projectId ? 'selected' : ''}>${p.name}</option>`).join('')}
                                         </select>
                                         <select id="edit-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">
                                             ${AppState.settings.times.map(t => `<option value="${t}" ${d.duration == t ? 'selected' : ''}>${t}m</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div class="flex gap-2 items-center">
+                                        <span class="text-xs text-gray-400 w-24">Bloqué par :</span>
+                                        <select id="edit-dependency" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-gray-300 border border-gray-800 focus:outline-none">
+                                            ${depOptions}
                                         </select>
                                     </div>
                                     <div class="flex gap-2 flex-wrap">
@@ -1001,8 +1244,14 @@
 
                                     ${AppState.editPrompt.type === 'subtask' ? `
                                     <div class="flex gap-2">
-                                    <select id="edit-sub-duration" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">
+                                        <select id="edit-sub-duration" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">
                                             ${AppState.settings.times.map(t => `<option value="${t}" ${(d.duration || 15) == t ? 'selected' : ''}>${t}m</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div class="flex gap-2 items-center">
+                                        <span class="text-xs text-gray-400 w-24">Bloqué par :</span>
+                                        <select id="edit-dependency" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-gray-300 border border-gray-800 focus:outline-none">
+                                            ${depOptions}
                                         </select>
                                     </div>
                                     <div class="flex gap-2 flex-wrap">
@@ -1056,6 +1305,7 @@
             },
             
             init(){
+                this.checkAutoArchive();
                 document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 py-4 flex justify-around items-center z-20 pb-8"><button onclick="App.setTab('home')" id="nav-home" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="home"></i><span class="text-[10px] font-bold tracking-wider uppercase">Action</span></button><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[10px] font-bold tracking-wider uppercase">Projets</span></button><button onclick="App.setTab('bank')" id="nav-bank" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="list-todo"></i><span class="text-[10px] font-bold tracking-wider uppercase">Banque</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[10px] font-bold tracking-wider uppercase">Param</span></button></nav>`);
                 this.render();
             }
