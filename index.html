@@ -43,7 +43,7 @@
             {id:'t5',projectId:null,name:'Déclarer impôts',duration:30,locations:['Ordi'],priority:'Haute',status:'todo',subtasks:[],note:''}
         ];
         
-        // Migration of old data (nettoyage des propriétés obsolètes)
+        // Migration of old data
         const migrateProjects = (projects) => {
             return projects.map(p => {
                 const newP = { ...p, category: p.category || '' };
@@ -106,7 +106,6 @@
             },
             setTab(tab){AppState.activeTab=tab;this.render();},
             
-            // --- SETTINGS LOGIC ---
             addSetting(type, inputId) {
                 const input = document.getElementById(inputId);
                 let val = input.value.trim();
@@ -131,7 +130,6 @@
                 this.save();
             },
 
-            // --- MENU LOGIC ---
             openMenu(e, type, id, parentId = null) {
                 if (e) { e.preventDefault(); e.stopPropagation(); }
                 AppState.activeMenu = { type, id, parentId };
@@ -160,7 +158,6 @@
                 this.render();
             },
 
-            // --- NOTE LOGIC ---
             openNote(type, id, parentId = null) {
                 let itemData = {};
                 if (type === 'project') itemData = AppState.projects.find(p => p.id === id);
@@ -193,18 +190,16 @@
                             return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, note: noteText } : s) };
                         }
                         return t;
-                        });
+                    });
                 }
                 AppState.notePrompt = null;
                 this.save();
             },
 
-            // --- DOUBLE TAP LOGIC ---
             handleRowTap(projectId) {
                 if (!projectId || projectId === 'null' || projectId === 'undefined') return;
                 const now = new Date().getTime();
                 if (now - this.lastTapTime < 300) {
-                    // Double tap détecté
                     this.goToProject(projectId);
                 }
                 this.lastTapTime = now;
@@ -399,11 +394,11 @@
                                     }
                                     if (matchLoc) {
                                         allAvailable.push({ ...s, isSubtask: true, parentId: t.id, parentName: t.name, projectId: t.projectId });
-                    }
                                     }
+                                }
                             }
                         });
-                    }
+                        }
                     
                     if (!hasActiveSubtasks && t.status !== 'done' && t.duration <= AppState.homeTime) {
                         let matchLoc = true;
@@ -418,18 +413,24 @@
                 });
                 
                 allAvailable.sort((a,b)=> {
-                    // 1. Priorité (Haute > Moyenne > Basse)
+                    // 1. Durée (descendante : les plus longues qui rentrent dans le temps imparti d'abord)
+                    const dA = a.duration || 15;
+                    const dB = b.duration || 15;
+                    if (dA !== dB) return dB - dA;
+                    
+                    // 2. Priorité (Haute > Moyenne > Basse)
                     const pA = priorityWeights[a.priority || 'Moyenne'];
                     const pB = priorityWeights[b.priority || 'Moyenne'];
                     if (pA !== pB) return pB - pA;
                     
-                    // 2. Durée (le plus court en premier)
-                    const dA = a.duration || 15;
-                    const dB = b.duration || 15;
-                    return dA - dB;
+                    // 3. Sous-tâches en priorité (si même durée et même priorité)
+                    if (a.isSubtask && !b.isSubtask) return -1;
+                    if (!a.isSubtask && b.isSubtask) return 1;
+                    
+                    return 0;
                 });
                 
-                AppState.homeSuggestions = allAvailable.slice(0,3);
+                AppState.homeSuggestions = allAvailable.slice(0,5);
                 AppState.homeSearched=true;
                 this.render();
             },
@@ -583,7 +584,7 @@
                             if (t.subtasks) {
                                 t.subtasks.forEach(s => { tTotal++; if (s.status === 'done') tComp++; });
                             }
-                            });
+                        });
                         if (tTotal > 0 && tTotal === tComp) done++;
                     });
 
@@ -611,7 +612,7 @@
                             </div>
                             <button onclick="App.generateAction()" class="w-full py-4 mt-2 rounded-xl bg-cyan-500 text-black font-black text-lg uppercase transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)]">Trouver quoi faire</button>
                         </div>
-                        ${AppState.homeSearched?`<div class="mt-6 pt-4 border-t border-gray-800"><h3 class="text-xs font-bold text-gray-500 mb-3 uppercase">Résultats triés par priorité (${AppState.homeSuggestions.length})</h3>${AppState.homeSuggestions.length>0?`<div class="space-y-2">${AppState.homeSuggestions.map(t=>this.renderTask(t, false, t.isSubtask ? t.parentId : null, t.isSubtask ? t.parentName : null)).join('')}</div>`:`<p class="text-sm text-gray-500 text-center py-4">Aucune tâche ne correspond.</p>`}</div>`:''}
+                        ${AppState.homeSearched?`<div class="mt-6 pt-4 border-t border-gray-800"><h3 class="text-xs font-bold text-gray-500 mb-3 uppercase">Résultats (${AppState.homeSuggestions.length})</h3>${AppState.homeSuggestions.length>0?`<div class="space-y-2">${AppState.homeSuggestions.map(t=>this.renderTask(t, false, t.isSubtask ? t.parentId : null, t.isSubtask ? t.parentName : null)).join('')}</div>`:`<p class="text-sm text-gray-500 text-center py-4">Aucune tâche ne correspond.</p>`}</div>`:''}
                     </section>
                     
                     <section>
@@ -985,7 +986,7 @@
                                         <select id="edit-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">
                                             ${AppState.settings.times.map(t => `<option value="${t}" ${d.duration == t ? 'selected' : ''}>${t}m</option>`).join('')}
                                         </select>
-                                        </div>
+                                    </div>
                                     <div class="flex gap-2 flex-wrap">
                                         ${AppState.settings.locations.map(l => `
                                             <button type="button" onclick="App.toggleFormLocation(this)" data-loc="${l}" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold ${dLocs.includes(l) ? 'loc-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${l}</button>
@@ -1000,7 +1001,7 @@
 
                                     ${AppState.editPrompt.type === 'subtask' ? `
                                     <div class="flex gap-2">
-                                        <select id="edit-sub-duration" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">
+                                    <select id="edit-sub-duration" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">
                                             ${AppState.settings.times.map(t => `<option value="${t}" ${(d.duration || 15) == t ? 'selected' : ''}>${t}m</option>`).join('')}
                                         </select>
                                     </div>
