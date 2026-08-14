@@ -9,23 +9,32 @@
     <style>
         ::-webkit-scrollbar { width: 0px; background: transparent; }
         body { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
-        .draggable-item { cursor: grab; transition: transform 0.2s ease, background-color 0.2s ease; }
+        
+        /* FIX : Empêche les icônes SVG d'intercepter les clics */
+        svg { pointer-events: none; }
+        
+        /* FIX : Empêche la sélection de texte lors du double tap */
+        .draggable-item { 
+            cursor: grab; 
+            transition: transform 0.2s ease, background-color 0.2s ease; 
+            user-select: none; 
+            -webkit-user-select: none; 
+        }
         .draggable-item:active { cursor: grabbing; }
         .dragging { opacity: 0.4; background: #13161c; transform: scale(1.02); }
         .drag-over { border-top: 2px dashed #06b6d4 !important; }
+        
         @keyframes slideUp {
             from { transform: translateY(100%); opacity: 0; }
             to { transform: translateY(0); opacity: 1; }
         }
         .animate-slide-up { animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        /* Style pour les liens dans les notes */
         .note-content a { color: #22d3ee; text-decoration: underline; }
     </style>
 </head>
 <body class="bg-black text-gray-200 font-sans selection:bg-cyan-500/30">
     <div class="flex justify-center w-full min-h-screen">
         <div class="w-full min-h-screen bg-[#0D0F12] flex flex-col relative overflow-hidden" id="app-container">
-            <!-- Header retiré selon la demande -->
             <main id="app-content" class="flex-1 overflow-y-auto pt-8 pb-24 px-4"></main>
         </div>
     </div>
@@ -40,7 +49,6 @@
             {id:'t5',projectId:null,name:'Déclarer impôts',duration:30,locations:['Ordi'],priority:'Haute',status:'todo',doneAt:null,archived:false,subtasks:[],note:'',dependsOn:null}
         ];
         
-        // Migration of old data
         const migrateProjects = (projects) => {
             return projects.map(p => {
                 const newP = { ...p, category: p.category || '', archived: !!p.archived };
@@ -111,9 +119,8 @@
             },
             setTab(tab){AppState.activeTab=tab;this.render();},
 
-            // --- AUTO ARCHIVE ---
             checkAutoArchive() {
-                const oneDay = 24 * 60 * 60 * 1000; // 24h
+                const oneDay = 24 * 60 * 60 * 1000;
                 const now = Date.now();
                 let updated = false;
 
@@ -133,7 +140,6 @@
                 AppState.projects.forEach(p => {
                     const pTasks = AppState.tasks.filter(t => t.projectId === p.id);
                     if (pTasks.length > 0 && pTasks.every(t => t.archived) && !p.archived) {
-                        // Project archived if all its tasks are archived
                         p.archived = true; updated = true;
                     }
                 });
@@ -141,7 +147,6 @@
                 if (updated) this.save();
             },
             
-            // --- SETTINGS LOGIC ---
             addSetting(type, inputId, colorId = null) {
                 const input = document.getElementById(inputId);
                 let val = input.value.trim();
@@ -182,7 +187,6 @@
                 return cat ? cat.color : '#4b5563';
             },
 
-            // --- MENU & MODALS LOGIC ---
             openMenu(e, type, id, parentId = null) {
                 if (e) { e.preventDefault(); e.stopPropagation(); }
                 AppState.activeMenu = { type, id, parentId };
@@ -192,10 +196,6 @@
                 AppState.activeMenu = null;
                 this.render();
                 },
-            closeMenu() {
-                AppState.activeMenu = null;
-                this.render();
-            },
             
             openEdit() {
                 const { type, id, parentId } = AppState.activeMenu;
@@ -233,7 +233,6 @@
                 this.save();
             },
 
-            // --- DEPENDENCY LOGIC ---
             isBlocked(itemId) {
                 let item = null;
                 for (let t of AppState.tasks) {
@@ -256,7 +255,6 @@
                 return dep && dep.status !== 'done';
             },
 
-            // --- NOTE LOGIC ---
             openNote(type, id, parentId = null) {
                 let itemData = {};
                 if (type === 'project') itemData = AppState.projects.find(p => p.id === id);
@@ -340,10 +338,11 @@
                 this.save();
             },
 
+            // FIX: Augmentation du temps max pour le double tap (400ms) pour faciliter son usage sur mobile
             handleRowTap(projectId) {
                 if (!projectId || projectId === 'null' || projectId === 'undefined') return;
                 const now = new Date().getTime();
-                if (now - this.lastTapTime < 300) {
+                if (now - this.lastTapTime < 400) {
                     this.goToProject(projectId);
                 }
                 this.lastTapTime = now;
@@ -397,7 +396,7 @@
                             return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, locations, priority, dependsOn } : s) };
                         }
                         return t;
-                    });
+                        });
                 }
                 AppState.editPrompt = null;
                 this.save();
@@ -450,13 +449,13 @@
             },
             
             toggleTask(taskId){
-                if(this.isBlocked(taskId)) return; // prevent toggle if blocked
+                if(this.isBlocked(taskId)) return;
                 AppState.tasks=AppState.tasks.map(t=>t.id===taskId?{...t,status:t.status==='todo'?'done':'todo',doneAt:t.status==='todo'?Date.now():null}:t);
                 if(AppState.homeSearched)this.generateAction();
                 this.save();
             },
             toggleSubtask(taskId,subtaskId){
-                if(this.isBlocked(subtaskId)) return; // prevent toggle if blocked
+                if(this.isBlocked(subtaskId)) return;
                 AppState.tasks=AppState.tasks.map(t=>{
                     if(t.id===taskId){
                         return{...t,subtasks:t.subtasks.map(s=>s.id===subtaskId?{...s,status:s.status==='todo'?'done':'todo',doneAt:s.status==='todo'?Date.now():null}:s)}
@@ -522,9 +521,16 @@
                 }
                 this.render();
             },
+            
+            // FIX: Récupération du focus sur l'input de recherche
             setSearch(val) {
                 AppState.bankSearch = val;
                 this.render();
+                const searchInput = document.getElementById('bank-search-input');
+                if (searchInput) {
+                    searchInput.focus();
+                    searchInput.setSelectionRange(val.length, val.length);
+                }
             },
             
             generateAction(){
@@ -566,17 +572,14 @@
                 });
                 
                 allAvailable.sort((a,b)=> {
-                    // 1. Durée (descendante)
                     const dA = a.duration || 15;
                     const dB = b.duration || 15;
                     if (dA !== dB) return dB - dA;
                     
-                    // 2. Priorité
                     const pA = priorityWeights[a.priority || 'Moyenne'];
                     const pB = priorityWeights[b.priority || 'Moyenne'];
                     if (pA !== pB) return pB - pA;
                     
-                    // 3. Sous-tâches en priorité
                     if (a.isSubtask && !b.isSubtask) return -1;
                     if (!a.isSubtask && b.isSubtask) return 1;
                     
@@ -793,6 +796,7 @@
                             `).join('')}
                         </div>
                     </section>
+                </div>`;
                 </div>`;
             },
             
@@ -1033,7 +1037,7 @@
                             </div>
                             <div class="mt-2 relative">
                                 <i data-lucide="search" class="absolute left-3 top-2.5 text-gray-500 w-4 h-4"></i>
-                                <input type="text" placeholder="Rechercher une tâche..." value="${AppState.bankSearch}" oninput="App.setSearch(this.value)" class="w-full bg-[#1A1D24] rounded-xl pl-9 pr-4 py-2 text-sm text-white focus:outline-none border border-gray-800 focus:border-cyan-500">
+                                <input type="text" id="bank-search-input" placeholder="Rechercher une tâche..." value="${AppState.bankSearch}" oninput="App.setSearch(this.value)" class="w-full bg-[#1A1D24] rounded-xl pl-9 pr-4 py-2 text-sm text-white focus:outline-none border border-gray-800 focus:border-cyan-500">
                             </div>
                         </div>
                         <div class="pb-10">${bankListHtml}</div>
@@ -1129,7 +1133,7 @@
                                     <button onclick="App.closeMenu()" class="w-full text-center px-6 py-4 text-gray-500 font-bold hover:bg-[#1f232b] rounded-2xl">Annuler</button>
                                 </div>
                             </div>
-                            </div>
+                        </div>
                     `;
                 } else if (AppState.notePrompt) {
                     const n = AppState.notePrompt;
@@ -1154,7 +1158,7 @@
                                                     <span class="text-xs">Ajouter une image</span>
                                                 </div>
                                             `}
-                                        </div>
+                                            </div>
 
                                         <div class="flex gap-3 mt-4">
                                             <button type="button" onclick="App.toggleNoteMode()" class="flex-1 py-3 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button>
