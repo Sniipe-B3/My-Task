@@ -195,7 +195,7 @@
             closeMenu() {
                 AppState.activeMenu = null;
                 this.render();
-                },
+            },
             
             openEdit() {
                 const { type, id, parentId } = AppState.activeMenu;
@@ -396,7 +396,7 @@
                             return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, locations, priority, dependsOn } : s) };
                         }
                         return t;
-                        });
+                    });
                 }
                 AppState.editPrompt = null;
                 this.save();
@@ -797,7 +797,6 @@
                         </div>
                     </section>
                 </div>`;
-                </div>`;
             },
             
             renderProjects(){
@@ -1158,7 +1157,7 @@
                                                     <span class="text-xs">Ajouter une image</span>
                                                 </div>
                                             `}
-                                            </div>
+                                        </div>
 
                                         <div class="flex gap-3 mt-4">
                                             <button type="button" onclick="App.toggleNoteMode()" class="flex-1 py-3 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button>
