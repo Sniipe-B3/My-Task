@@ -34,28 +34,35 @@
     </div>
     
     <script>
-        const INITIAL_PROJECTS = [{id:'p1',name:'Poulailler',deadline:'2026-09-01',note:'',category:'Business'},{id:'p2',name:'Entretien Peugeot',deadline:'2026-08-20',note:'',category:'Famille'}];
+        const INITIAL_PROJECTS = [{id:'p1',name:'Poulailler',note:'',category:'Business'},{id:'p2',name:'Entretien Peugeot',note:'',category:'Famille'}];
         const INITIAL_TASKS = [
-            {id:'t1',projectId:'p1',name:'Acheter le bois',deadline:'',duration:60,locations:['Boulot'],priority:'Haute',status:'done',subtasks:[],note:''},
-            {id:'t2',projectId:'p1',name:'Monter les murs',deadline:'2026-08-15',duration:120,locations:['Jardin', 'Maison'],priority:'Moyenne',status:'todo',note:'Penser à vérifier le niveau',subtasks:[{id:'s1',name:'Découper planches',duration:30,locations:['Jardin'],priority:'Haute',status:'todo',note:''},{id:'s2',name:'Visser',duration:45,locations:['Jardin'],priority:'Basse',status:'todo',note:''}]},
-            {id:'t3',projectId:'p2',name:'Prendre rdv garage',deadline:'2026-08-13',duration:15,locations:['Ordi', 'Maison'],priority:'Haute',status:'todo',subtasks:[],note:''},
-            {id:'t4',projectId:null,name:'Appeler le dentiste',deadline:'2026-08-18',duration:15,locations:['Maison', 'Boulot'],priority:'Basse',status:'todo',subtasks:[],note:''},
-            {id:'t5',projectId:null,name:'Déclarer impôts',deadline:'2026-08-14',duration:30,locations:['Ordi'],priority:'Haute',status:'todo',subtasks:[],note:''}
+            {id:'t1',projectId:'p1',name:'Acheter le bois',duration:60,locations:['Boulot'],priority:'Haute',status:'done',subtasks:[],note:''},
+            {id:'t2',projectId:'p1',name:'Monter les murs',duration:120,locations:['Jardin', 'Maison'],priority:'Moyenne',status:'todo',note:'Penser à vérifier le niveau',subtasks:[{id:'s1',name:'Découper planches',duration:30,locations:['Jardin'],priority:'Haute',status:'todo',note:''},{id:'s2',name:'Visser',duration:45,locations:['Jardin'],priority:'Basse',status:'todo',note:''}]},
+            {id:'t3',projectId:'p2',name:'Prendre rdv garage',duration:15,locations:['Ordi', 'Maison'],priority:'Haute',status:'todo',subtasks:[],note:''},
+            {id:'t4',projectId:null,name:'Appeler le dentiste',duration:15,locations:['Maison', 'Boulot'],priority:'Basse',status:'todo',subtasks:[],note:''},
+            {id:'t5',projectId:null,name:'Déclarer impôts',duration:30,locations:['Ordi'],priority:'Haute',status:'todo',subtasks:[],note:''}
         ];
         
+        // Migration of old data (nettoyage des propriétés obsolètes)
         const migrateProjects = (projects) => {
-            return projects.map(p => ({ ...p, category: p.category || '' }));
+            return projects.map(p => {
+                const newP = { ...p, category: p.category || '' };
+                delete newP.deadline;
+                return newP;
+            });
         };
         const migrateTasks = (tasks) => {
             return tasks.map(t => {
                 const newTask = { ...t, locations: t.locations || [], note: t.note || '' };
                 delete newTask.energy;
                 delete newTask.category;
+                delete newTask.deadline;
                 if (newTask.subtasks) {
                     newTask.subtasks = newTask.subtasks.map(s => {
                         const newSub = { ...s, locations: s.locations || [], note: s.note || '' };
                         delete newSub.energy;
                         delete newSub.category;
+                        delete newSub.deadline;
                         return newSub;
                     });
                 }
@@ -89,6 +96,8 @@
         };
 
         const App = {
+            lastTapTime: 0,
+            
             save(){
                 localStorage.setItem('osdevie_projects',JSON.stringify(AppState.projects));
                 localStorage.setItem('osdevie_tasks',JSON.stringify(AppState.tasks));
@@ -97,6 +106,7 @@
             },
             setTab(tab){AppState.activeTab=tab;this.render();},
             
+            // --- SETTINGS LOGIC ---
             addSetting(type, inputId) {
                 const input = document.getElementById(inputId);
                 let val = input.value.trim();
@@ -121,6 +131,7 @@
                 this.save();
             },
 
+            // --- MENU LOGIC ---
             openMenu(e, type, id, parentId = null) {
                 if (e) { e.preventDefault(); e.stopPropagation(); }
                 AppState.activeMenu = { type, id, parentId };
@@ -149,6 +160,7 @@
                 this.render();
             },
 
+            // --- NOTE LOGIC ---
             openNote(type, id, parentId = null) {
                 let itemData = {};
                 if (type === 'project') itemData = AppState.projects.find(p => p.id === id);
@@ -181,10 +193,25 @@
                             return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, note: noteText } : s) };
                         }
                         return t;
-                    });
+                        });
                 }
                 AppState.notePrompt = null;
                 this.save();
+            },
+
+            // --- DOUBLE TAP LOGIC ---
+            handleRowTap(projectId) {
+                if (!projectId || projectId === 'null' || projectId === 'undefined') return;
+                const now = new Date().getTime();
+                if (now - this.lastTapTime < 300) {
+                    // Double tap détecté
+                    this.goToProject(projectId);
+                }
+                this.lastTapTime = now;
+            },
+            goToProject(projectId) {
+                AppState.expandedProjectId = projectId;
+                this.setTab('projects');
             },
 
             toggleFormLocation(btn) {
@@ -306,7 +333,7 @@
                 const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
                 
                 if(!name.trim())return;
-                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId||null,duration:parseInt(duration),locations,priority,deadline:'',status:'todo',subtasks:[],note:''});
+                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId||null,duration:parseInt(duration),locations,priority,status:'todo',subtasks:[],note:''});
                 
                 document.getElementById('new-task-name').value = '';
                 this.save();
@@ -316,7 +343,7 @@
                 if(!input) return;
                 const name = input.value;
                 if(!name.trim())return;
-                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId,duration:15,locations:[],priority:'Moyenne',deadline:'',status:'todo',subtasks:[],note:''});
+                AppState.tasks.unshift({id:Date.now().toString(),name,projectId:projectId,duration:15,locations:[],priority:'Moyenne',status:'todo',subtasks:[],note:''});
                 AppState.showProjectAddTaskModal = null;
                 this.save();
             },
@@ -338,7 +365,7 @@
                 const name=document.getElementById('new-proj-name').value;
                 const category=document.getElementById('new-proj-category').value;
                 if(!name.trim())return;
-                AppState.projects.push({id:Date.now().toString(),name,category,deadline:'',note:''});
+                AppState.projects.push({id:Date.now().toString(),name,category,note:''});
                 AppState.showAddProject=false;
                 this.save();
             },
@@ -371,9 +398,9 @@
                                         else matchLoc = s.locations.some(l => AppState.homeLocations.includes(l));
                                     }
                                     if (matchLoc) {
-                                        allAvailable.push({ ...s, isSubtask: true, parentId: t.id, parentName: t.name });
+                                        allAvailable.push({ ...s, isSubtask: true, parentId: t.id, parentName: t.name, projectId: t.projectId });
+                    }
                                     }
-                                }
                             }
                         });
                     }
@@ -385,17 +412,21 @@
                             else matchLoc = t.locations.some(l => AppState.homeLocations.includes(l));
                         }
                         if (matchLoc) {
-                            allAvailable.push({ ...t, isSubtask: false });
+                            allAvailable.push({ ...t, isSubtask: false, projectId: t.projectId });
                         }
                     }
                 });
                 
                 allAvailable.sort((a,b)=> {
-                    // Les sous-tâches remontent en premier
-                    if (a.isSubtask && !b.isSubtask) return -1;
-                    if (!a.isSubtask && b.isSubtask) return 1;
-                    // Ensuite tri par priorité
-                                  return priorityWeights[b.priority || 'Moyenne'] - priorityWeights[a.priority || 'Moyenne'];
+                    // 1. Priorité (Haute > Moyenne > Basse)
+                    const pA = priorityWeights[a.priority || 'Moyenne'];
+                    const pB = priorityWeights[b.priority || 'Moyenne'];
+                    if (pA !== pB) return pB - pA;
+                    
+                    // 2. Durée (le plus court en premier)
+                    const dA = a.duration || 15;
+                    const dB = b.duration || 15;
+                    return dA - dB;
                 });
                 
                 AppState.homeSuggestions = allAvailable.slice(0,3);
@@ -465,13 +496,14 @@
                 const hasLocations = task.locations && task.locations.length > 0;
                 
                 let projectName = '';
-                if (!isSubtask && task.projectId) {
+                if (task.projectId) {
                     const proj = AppState.projects.find(p => p.id === task.projectId);
                     if (proj) projectName = proj.name;
                 }
 
                 return `
                 <div draggable="true" 
+                     onclick="App.handleRowTap('${task.projectId}')"
                      ondragstart="App.handleDragStart(event, '${task.id}', '${type}'${argParent})" 
                      ondragend="App.handleDragEnd(event)" 
                      ondragover="App.handleDragOver(event)" 
@@ -490,8 +522,8 @@
                                 <span class="px-2 py-0.5 rounded-md text-[10px] border font-bold ${priorityColors[task.priority || 'Moyenne']}">${task.priority || 'Moyenne'}</span>
                                 ${task.note ? `<span onclick="App.openNote('${type}', '${task.id}'${argParent}); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
                             </div>
-                            ${projectName ? `<div class="text-[10px] text-cyan-500/70 font-semibold flex items-center gap-1 mt-1 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Tâche du projet : ${projectName}</div>` : ''}
-                            ${isSubtask && parentName ? `<div class="text-[10px] text-cyan-500/70 font-semibold flex items-center gap-1 mt-1 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Sous-tâche de : ${parentName}</div>` : ''}
+                            ${projectName && !isSubtask ? `<div class="text-[10px] text-cyan-500/70 font-semibold flex items-center gap-1 mt-1 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Tâche du projet : ${projectName}</div>` : ''}
+                            ${isSubtask && parentName ? `<div class="text-[10px] text-cyan-500/70 font-semibold flex items-center gap-1 mt-1 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Sous-tâche de : ${parentName} ${projectName ? `(${projectName})` : ''}</div>` : ''}
                         </div>
                     </div>
                     <div class="flex items-center gap-1 shrink-0 ml-2">
@@ -508,8 +540,8 @@
             },
             
             renderHome(){
-                const now = new Date();
-                let allUrgencies = [];
+                let allActive = [];
+                const priorityWeights={'Haute':3,'Moyenne':2,'Basse':1};
                 
                 AppState.tasks.forEach(t => {
                     let hasActiveSubtasks = false;
@@ -517,23 +549,25 @@
                         t.subtasks.forEach(s => {
                             if (s.status !== 'done') {
                                 hasActiveSubtasks = true;
-                                allUrgencies.push({...s, isSubtask: true, parentId: t.id, parentName: t.name, deadline: t.deadline});
+                                allActive.push({...s, isSubtask: true, parentId: t.id, parentName: t.name, projectId: t.projectId});
                             }
                         });
                     }
                     if (!hasActiveSubtasks && t.status !== 'done') {
-                        allUrgencies.push({...t, isSubtask: false});
+                        allActive.push({...t, isSubtask: false, projectId: t.projectId});
                     }
                 });
 
-                const urgencies = allUrgencies.sort((a, b) => {
-                    const deadlineA = a.deadline ? new Date(a.deadline) : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-                    const deadlineB = b.deadline ? new Date(b.deadline) : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-                    const diffA = deadlineA - now;
-                    const diffB = deadlineB - now;
-                    const scoreA = diffA - ((a.duration || 15) * 60 * 1000);
-                    const scoreB = diffB - ((b.duration || 15) * 60 * 1000);
-                    return scoreA - scoreB;
+                const urgencies = allActive.sort((a, b) => {
+                    // 1. Priorité (Haute > Moyenne > Basse)
+                    const pA = priorityWeights[a.priority || 'Moyenne'];
+                    const pB = priorityWeights[b.priority || 'Moyenne'];
+                    if (pA !== pB) return pB - pA;
+                    
+                    // 2. Durée (le plus court en premier)
+                    const dA = a.duration || 15;
+                    const dB = b.duration || 15;
+                    return dA - dB;
                 }).slice(0, 5);
 
                 const categoryStats = AppState.settings.categories.map(cat => {
@@ -549,7 +583,7 @@
                             if (t.subtasks) {
                                 t.subtasks.forEach(s => { tTotal++; if (s.status === 'done') tComp++; });
                             }
-                        });
+                            });
                         if (tTotal > 0 && tTotal === tComp) done++;
                     });
 
@@ -581,7 +615,7 @@
                     </section>
                     
                     <section>
-                        <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2"><i data-lucide="alert-circle" class="text-emerald-400 w-4 h-4"></i> Urgences & Rapides</h2>
+                        <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2"><i data-lucide="alert-circle" class="text-emerald-400 w-4 h-4"></i> Priorités & Rapides</h2>
                         <div class="space-y-2">${urgencies.length>0?urgencies.map(t=>this.renderTask(t, false, t.isSubtask ? t.parentId : null, t.isSubtask ? t.parentName : null)).join(''):`<div class="bg-[#1A1D24] rounded-2xl p-6 text-center border border-gray-800 border-dashed"><p class="text-gray-500 text-sm">Tout est sous contrôle.</p></div>`}</div>
                     </section>
 
@@ -685,6 +719,7 @@
 
                                     ${task.subtasks&&task.subtasks.length>0?`<div class="ml-8 space-y-1.5 border-l border-gray-800 pl-3">${task.subtasks.map(sub=>`
                                         <div draggable="true" 
+                                             onclick="App.handleRowTap('${task.projectId}')"
                                              ondragstart="App.handleDragStart(event, '${sub.id}', 'subtask', '${task.id}')" 
                                              ondragend="App.handleDragEnd(event)" 
                                              ondragover="App.handleDragOver(event)" 
@@ -747,7 +782,7 @@
                                 activeSubs.forEach(sub => {
                                     const isSubDone = sub.status === 'done';
                                     bankListHtml += `
-                                    <div class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-800/50 hover:border-gray-700 transition-all ${isSubDone ? 'opacity-60' : ''}">
+                                    <div class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-800/50 hover:border-gray-700 transition-all ${isSubDone ? 'opacity-60' : ''}" onclick="App.handleRowTap('${task.projectId}')">
                                         <div class="flex items-center gap-3 flex-1 min-w-0">
                                             <button onclick="App.toggleSubtask('${task.id}','${sub.id}'); event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer p-1 -ml-1">
                                                 <i data-lucide="${isSubDone ? 'check-circle-2' : 'circle'}" class="${isSubDone ? 'text-emerald-500' : 'text-gray-600'} w-4 h-4"></i>
@@ -950,7 +985,7 @@
                                         <select id="edit-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">
                                             ${AppState.settings.times.map(t => `<option value="${t}" ${d.duration == t ? 'selected' : ''}>${t}m</option>`).join('')}
                                         </select>
-                                    </div>
+                                        </div>
                                     <div class="flex gap-2 flex-wrap">
                                         ${AppState.settings.locations.map(l => `
                                             <button type="button" onclick="App.toggleFormLocation(this)" data-loc="${l}" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold ${dLocs.includes(l) ? 'loc-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${l}</button>
