@@ -7,8 +7,8 @@ const INITIAL_PROJECTS = [
 ];
 
 const INITIAL_TASKS = [
-    { id: 't1', projectId: 'p1', name: 'Acheter le bois', duration: 60, locations: ['Boulot'], priority: 'Haute', status: 'done', subtasks: [], note: '' },
-    { id: 't2', projectId: 'p1', name: 'Monter les murs', duration: 120, locations: ['Jardin', 'Maison'], priority: 'Moyenne', status: 'todo', note: 'Penser à vérifier le niveau', subtasks: [
+    { id: 't1', projectId: 'p1', name: '1. Acheter le bois', duration: 60, locations: ['Boulot'], priority: 'Haute', status: 'done', subtasks: [], note: '' },
+    { id: 't2', projectId: 'p1', name: '2. Monter les murs', duration: 120, locations: ['Jardin', 'Maison'], priority: 'Moyenne', status: 'todo', note: 'Penser à vérifier le niveau', subtasks: [
         { id: 's1', name: 'Découper planches', duration: 30, locations: ['Jardin'], priority: 'Haute', status: 'todo', note: '' },
         { id: 's2', name: 'Visser', duration: 45, locations: ['Jardin'], priority: 'Basse', status: 'todo', note: '' }
     ]},
@@ -38,6 +38,8 @@ const AppState = {
     validatedSchedule: JSON.parse(localStorage.getItem('osdevie_validatedSchedule')) || null,
     daysOfWeek: ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
 
+    isEditingSchedule: false, // Nouveau statut pour l'édition du planning
+    
     homeTime: 30, homeLocations: [], homeSuggestions: [], homeSearched: false,
     expandedProjectId: null, showAddProject: false,
     bankFilter: 'all', bankPriorityFilter: 'all',
@@ -339,7 +341,7 @@ const App = {
         this.render(); 
     },
 
-    // --- DRAG & DROP ---
+    // --- DRAG & DROP (MOTEUR BANQUE / PROJET) ---
     handleDragStart(e, id, type, parentId = null) { 
         e.dataTransfer.setData('text/plain', JSON.stringify({id, type, parentId})); 
         e.currentTarget.classList.add('dragging'); 
@@ -383,6 +385,47 @@ const App = {
                     } 
                     return t;
                 }); 
+                this.save();
+            }
+        } catch(err) { console.error(err); }
+    },
+
+    // --- NOUVEAU : DRAG & DROP SPÉCIFIQUE AU PLANNING ---
+    handleScheduleDragStart(e, taskId, slotId) {
+        e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'schedule-task', sourceSlot: slotId}));
+        e.currentTarget.classList.add('opacity-50'); // Effet visuel
+    },
+    handleScheduleDragEnd(e) {
+        e.currentTarget.classList.remove('opacity-50');
+    },
+    handleScheduleDragOver(e) {
+        e.preventDefault();
+        // Surligne la boîte de réception
+        e.currentTarget.classList.add('border-cyan-500');
+    },
+    handleScheduleDragLeave(e) {
+        e.currentTarget.classList.remove('border-cyan-500');
+    },
+    handleScheduleDrop(e, targetSlotId) {
+        e.preventDefault();
+        e.currentTarget.classList.remove('border-cyan-500');
+        try {
+            const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+            if (data.type !== 'schedule-task') return;
+            if (data.sourceSlot === targetSlotId) return; // Si déposé au même endroit
+
+            const sourceSlot = AppState.validatedSchedule.find(s => s.slotId === data.sourceSlot);
+            const targetSlot = AppState.validatedSchedule.find(s => s.slotId === targetSlotId);
+            
+            const taskIndex = sourceSlot.tasks.findIndex(t => t.id === data.id);
+            if (taskIndex !== -1) {
+                const [task] = sourceSlot.tasks.splice(taskIndex, 1);
+                targetSlot.tasks.push(task); // Ajoute à la nouvelle zone
+                
+                // Recalcule le temps utilisé pour les deux créneaux
+                sourceSlot.usedTime -= task.duration;
+                targetSlot.usedTime += task.duration;
+                
                 this.save();
             }
         } catch(err) { console.error(err); }
@@ -475,6 +518,16 @@ const App = {
         let availableTasks = this.getFlatActiveTasks();
         
         availableTasks.sort((a,b) => {
+            // NOUVEAUTÉ : Intelligence de Séquence (Si nom commence par "1.", "2." dans le même projet)
+            if (a.projectId && a.projectId === b.projectId) {
+                const numA = parseInt(a.name);
+                const numB = parseInt(b.name);
+                if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
+                    return numA - numB; // Ordonne numériquement la suite
+                }
+            }
+            
+            // Suite classique par priorité et durée
             const pA = priorityWeights[a.priority || 'Moyenne'];
             const pB = priorityWeights[b.priority || 'Moyenne'];
             if (pA !== pB) return pB - pA;
@@ -491,6 +544,17 @@ const App = {
 
             for (let i = 0; i < availableTasks.length; i++) {
                 const task = availableTasks[i];
+                
+                // NOUVEAUTÉ : Vérification des dépendances pour respecter l'ordre
+                const numTask = parseInt(task.name);
+                if (!isNaN(numTask) && numTask > 1) {
+                    // Vérifie si la tâche précédente (N-1) du même projet est toujours en attente
+                    const prevTask = availableTasks.find(t => t.projectId === task.projectId && parseInt(t.name) === (numTask - 1));
+                    if (prevTask && !usedTaskIds.has(prevTask.id)) {
+                        continue; // On bloque l'ajout de cette tâche, elle doit attendre son tour !
+                    }
+                }
+
                 if (!usedTaskIds.has(task.id) && (currentUsedTime + task.duration) <= maxTime) {
                     let matchLoc = true;
                     if (slot.locations && slot.locations.length > 0) {
@@ -551,15 +615,33 @@ const App = {
         }
     },
 
+    toggleEditSchedule() {
+        AppState.isEditingSchedule = !AppState.isEditingSchedule;
+        this.render();
+    },
+
+    removeTaskFromSchedule(slotId, taskId) {
+        const slot = AppState.validatedSchedule.find(s => s.slotId === slotId);
+        const taskIndex = slot.tasks.findIndex(t => t.id === taskId);
+        if (taskIndex !== -1) {
+            const task = slot.tasks[taskIndex];
+            slot.tasks.splice(taskIndex, 1);
+            slot.usedTime -= task.duration;
+            this.save();
+        }
+    },
+
     validateSchedule() {
         AppState.validatedSchedule = AppState.draftSchedule;
         AppState.draftSchedule = null;
+        AppState.isEditingSchedule = false;
         this.save();
     },
 
     resetSchedule() {
         AppState.validatedSchedule = null;
         AppState.draftSchedule = null;
+        AppState.isEditingSchedule = false;
         this.save();
     },
 
@@ -607,26 +689,56 @@ const App = {
         </div>`;
     },
 
+    // Rendu spécifique pour les tâches encartées dans le planning (design allégé)
+    renderScheduleTask(task, slotId) {
+        const isEditing = AppState.isEditingSchedule;
+        const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
+        
+        return `
+        <div ${isEditing ? `draggable="true" ondragstart="App.handleScheduleDragStart(event, '${task.id}', '${slotId}')" ondragend="App.handleScheduleDragEnd(event)" class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-600 cursor-grab"` : `class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-800/50"`}>
+            <div class="flex-1 min-w-0 pointer-events-none">
+                <h4 class="font-bold text-sm text-gray-200 truncate">${task.name}</h4>
+                <div class="flex items-center gap-2 mt-1 text-[10px] text-gray-500">
+                    <span><i data-lucide="clock" class="w-3 h-3 inline"></i> ${task.duration}m</span>
+                    <span class="px-1.5 py-0.5 rounded-md border ${priorityColors[task.priority || 'Moyenne']}">${task.priority || 'Moyenne'}</span>
+                </div>
+            </div>
+            ${isEditing ? `
+                <button onclick="App.removeTaskFromSchedule('${slotId}', '${task.id}')" class="shrink-0 p-2 text-gray-500 hover:text-red-500 bg-gray-800/50 rounded-lg ml-2 transition-colors">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            ` : ''}
+        </div>`;
+    },
+
     renderPlanning() {
         if (AppState.validatedSchedule) {
             return `
             <div class="space-y-6">
                 <div class="flex justify-between items-center px-1">
                     <div>
-                        <h2 class="text-xl font-black text-emerald-400 flex items-center gap-2"><i data-lucide="calendar-check"></i> Semaine Planifiée</h2>
-                        <p class="text-xs text-gray-500 mt-1">Ton plan d'action est prêt à être exécuté.</p>
+                        <h2 class="text-xl font-black text-emerald-400 flex items-center gap-2"><i data-lucide="calendar-check"></i> Plan validé</h2>
                     </div>
-                    <button onclick="App.resetSchedule()" class="text-xs bg-gray-800 text-gray-400 px-3 py-1.5 rounded-lg hover:text-white">Réinitialiser</button>
+                    <div class="flex gap-2">
+                        <button onclick="App.toggleEditSchedule()" class="text-xs ${AppState.isEditingSchedule ? 'bg-cyan-900/50 text-cyan-400' : 'bg-gray-800 text-gray-400'} px-3 py-1.5 rounded-lg hover:text-white transition-colors">
+                            ${AppState.isEditingSchedule ? 'Terminer' : 'Modifier'}
+                        </button>
+                        <button onclick="App.resetSchedule()" class="text-xs bg-red-900/30 text-red-500 px-3 py-1.5 rounded-lg hover:text-white transition-colors">Reset</button>
+                    </div>
                 </div>
+                
+                ${AppState.isEditingSchedule ? '<p class="text-xs text-cyan-400 text-center animate-pulse mb-2">Glisse les tâches pour les déplacer ou supprime les avec (X)</p>' : ''}
+
                 <div class="space-y-4">
                     ${AppState.validatedSchedule.map(slot => `
-                        <div class="bg-[#1A1D24] rounded-2xl border border-gray-800 overflow-hidden">
-                            <div class="bg-gray-800/30 px-4 py-2 border-b border-gray-800 flex justify-between items-center">
+                        <div class="bg-[#1A1D24] rounded-2xl border ${AppState.isEditingSchedule ? 'border-dashed border-gray-600 transition-colors' : 'border-gray-800'} overflow-hidden"
+                             ${AppState.isEditingSchedule ? `ondragover="App.handleScheduleDragOver(event)" ondragleave="App.handleScheduleDragLeave(event)" ondrop="App.handleScheduleDrop(event, '${slot.slotId}')"` : ''}>
+                            <div class="bg-gray-800/30 px-4 py-2 border-b border-gray-800 flex justify-between items-center pointer-events-none">
                                 <span class="font-bold text-white text-sm">${slot.day} • ${slot.start} - ${slot.end}</span>
                                 <span class="text-xs text-gray-500">${slot.usedTime}m / ${slot.totalDuration}m</span>
                             </div>
-                            <div class="p-3 space-y-2">
-                                ${slot.tasks.length === 0 ? '<p class="text-xs text-gray-500 text-center py-2">Quartier libre</p>' : slot.tasks.map(t => this.renderTask(t, true)).join('')}
+                            <div class="p-3 space-y-2 min-h-[60px]">
+                                ${slot.tasks.length === 0 ? '<p class="text-xs text-gray-500 text-center py-2 pointer-events-none">Créneau vide</p>' : slot.tasks.map(t => this.renderScheduleTask(t, slot.slotId)).join('')}
                             </div>
                         </div>
                     `).join('')}
@@ -862,7 +974,7 @@ const App = {
 
     renderSettings() {
         const renderList = (type, placeholder, isNumber) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Lieux' : '<i data-lucide="tag" class="text-indigo-400 w-4 h-4"></i> Catégories'}</h3><div class="flex gap-2 mb-4"><input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}', ${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
-        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage', false)}${renderList('categories', 'Ex: Famille', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.1.0 (Planning Edition)</span></div></div>`;
+        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage', false)}${renderList('categories', 'Ex: Famille', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.2.1 (Modification & Planning)</span></div></div>`;
     },
     
     // ==========================================
