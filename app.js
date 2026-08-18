@@ -38,7 +38,7 @@ const AppState = {
     validatedSchedule: JSON.parse(localStorage.getItem('osdevie_validatedSchedule')) || null,
     daysOfWeek: ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
 
-    isEditingSchedule: false, // Nouveau statut pour l'édition du planning
+    isEditingSchedule: false, 
     
     homeTime: 30, homeLocations: [], homeSuggestions: [], homeSearched: false,
     expandedProjectId: null, showAddProject: false,
@@ -74,12 +74,7 @@ const App = {
         const input = document.getElementById(inputId);
         let val = input.value.trim();
         if (!val) return;
-        
-        if (type === 'times') { 
-            val = parseInt(val); 
-            if (isNaN(val) || val <= 0) return; 
-        }
-        
+        if (type === 'times') { val = parseInt(val); if (isNaN(val) || val <= 0) return; }
         if (!AppState.settings[type].includes(val)) {
             AppState.settings[type].push(val);
             if (type === 'times') AppState.settings[type].sort((a,b) => a - b);
@@ -101,11 +96,7 @@ const App = {
         AppState.activeMenu = { type, id, parentId }; 
         this.render(); 
     },
-    
-    closeMenu() { 
-        AppState.activeMenu = null; 
-        this.render(); 
-    },
+    closeMenu() { AppState.activeMenu = null; this.render(); },
     
     openEdit() {
         const { type, id, parentId } = AppState.activeMenu;
@@ -113,47 +104,29 @@ const App = {
         if (type === 'project') itemData = AppState.projects.find(p => p.id === id);
         if (type === 'task') itemData = AppState.tasks.find(t => t.id === id);
         if (type === 'subtask') itemData = AppState.tasks.find(t => t.id === parentId).subtasks.find(s => s.id === id);
-        
         AppState.editPrompt = { type, id, parentId, data: JSON.parse(JSON.stringify(itemData)) };
-        AppState.activeMenu = null; 
-        this.render();
+        AppState.activeMenu = null; this.render();
     },
-    
-    closeEdit() { 
-        AppState.editPrompt = null; 
-        this.render(); 
-    },
+    closeEdit() { AppState.editPrompt = null; this.render(); },
     
     openNote(type, id, parentId = null) {
         let itemData = {};
         if (type === 'project') itemData = AppState.projects.find(p => p.id === id);
         if (type === 'task') itemData = AppState.tasks.find(t => t.id === id);
         if (type === 'subtask') itemData = AppState.tasks.find(t => t.id === parentId).subtasks.find(s => s.id === id);
-        
         AppState.notePrompt = { type, id, parentId, note: itemData.note || '' };
-        AppState.activeMenu = null; 
-        this.render();
+        AppState.activeMenu = null; this.render();
     },
-    
-    closeNote() { 
-        AppState.notePrompt = null; 
-        this.render(); 
-    },
+    closeNote() { AppState.notePrompt = null; this.render(); },
     
     saveNote(event) {
         event.preventDefault();
         const { type, id, parentId } = AppState.notePrompt;
         const noteText = document.getElementById('edit-note-text').value;
-        
-        if (type === 'project') {
-            AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, note: noteText } : p);
-        } else if (type === 'task') {
-            AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, note: noteText } : t);
-        } else if (type === 'subtask') {
-            AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, note: noteText } : s) } : t);
-        }
-        AppState.notePrompt = null; 
-        this.save();
+        if (type === 'project') AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, note: noteText } : p);
+        else if (type === 'task') AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, note: noteText } : t);
+        else if (type === 'subtask') AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, note: noteText } : s) } : t);
+        AppState.notePrompt = null; this.save();
     },
 
     saveEdit(event) {
@@ -161,7 +134,6 @@ const App = {
         const form = event.target; 
         const { type, id, parentId } = AppState.editPrompt;
         const name = document.getElementById('edit-name').value;
-        
         if (type === 'project') {
             AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, name, category: document.getElementById('edit-proj-category').value } : p);
         } else if (type === 'task') {
@@ -171,137 +143,69 @@ const App = {
             const priorityBtn = form.querySelector('.edit-sub-priority-selected');
             AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration: parseInt(document.getElementById('edit-sub-duration').value), locations: this.getFormLocations(form), priority: priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne' } : s) } : t);
         }
-        AppState.editPrompt = null; 
-        this.save();
+        AppState.editPrompt = null; this.save();
     },
 
     // --- SELECTIONS VISUELLES ---
     toggleFormLocation(btn) {
         btn.classList.toggle('loc-selected');
         if (btn.classList.contains('loc-selected')) {
-            btn.classList.replace('bg-[#0D0F12]', 'bg-emerald-500/20'); 
-            btn.classList.replace('text-gray-500', 'text-emerald-400'); 
-            btn.classList.replace('border-transparent', 'border-emerald-500/50');
+            btn.classList.replace('bg-[#0D0F12]', 'bg-emerald-500/20'); btn.classList.replace('text-gray-500', 'text-emerald-400'); btn.classList.replace('border-transparent', 'border-emerald-500/50');
         } else {
-            btn.classList.replace('bg-emerald-500/20', 'bg-[#0D0F12]'); 
-            btn.classList.replace('text-emerald-400', 'text-gray-500'); 
-            btn.classList.replace('border-emerald-500/50', 'border-transparent');
+            btn.classList.replace('bg-emerald-500/20', 'bg-[#0D0F12]'); btn.classList.replace('text-emerald-400', 'text-gray-500'); btn.classList.replace('border-emerald-500/50', 'border-transparent');
         }
     },
-    
-    getFormLocations(form) { 
-        return Array.from(form.querySelectorAll('.loc-selected')).map(b => b.getAttribute('data-loc')); 
-    },
+    getFormLocations(form) { return Array.from(form.querySelectorAll('.loc-selected')).map(b => b.getAttribute('data-loc')); },
 
     selectEditPriority(btn) {
-        btn.parentElement.querySelectorAll('button').forEach(b => { 
-            b.classList.remove('edit-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50'); 
-            b.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent'); 
-        });
-        btn.classList.add('edit-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50'); 
-        btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
+        btn.parentElement.querySelectorAll('button').forEach(b => { b.classList.remove('edit-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50'); b.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent'); });
+        btn.classList.add('edit-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50'); btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
     },
-    
     selectSubEditPriority(btn) {
-        btn.parentElement.querySelectorAll('button').forEach(b => { 
-            b.classList.remove('edit-sub-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50'); 
-            b.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent'); 
-        });
-        btn.classList.add('edit-sub-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50'); 
-        btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
+        btn.parentElement.querySelectorAll('button').forEach(b => { b.classList.remove('edit-sub-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50'); b.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent'); });
+        btn.classList.add('edit-sub-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50'); btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
     },
-
     selectBankPriority(btn){ 
-        btn.parentElement.querySelectorAll('button').forEach(b=>{
-            b.classList.remove('priority-btn-selected','bg-purple-500/20','text-purple-400','border-purple-500/50');
-            b.classList.add('bg-[#0D0F12]','text-gray-500','border-transparent');
-        }); 
-        btn.classList.add('priority-btn-selected','bg-purple-500/20','text-purple-400','border-purple-500/50'); 
-        btn.classList.remove('bg-[#0D0F12]','text-gray-500','border-transparent'); 
+        btn.parentElement.querySelectorAll('button').forEach(b=>{b.classList.remove('priority-btn-selected','bg-purple-500/20','text-purple-400','border-purple-500/50');b.classList.add('bg-[#0D0F12]','text-gray-500','border-transparent');}); 
+        btn.classList.add('priority-btn-selected','bg-purple-500/20','text-purple-400','border-purple-500/50'); btn.classList.remove('bg-[#0D0F12]','text-gray-500','border-transparent'); 
     },
 
     // --- SUPPRESSION ---
-    openDelete() { 
-        AppState.deletePrompt = { ...AppState.activeMenu }; 
-        AppState.activeMenu = null; 
-        this.render(); 
-    },
-    
-    cancelDelete() { 
-        AppState.deletePrompt = null; 
-        this.render(); 
-    },
-    
+    openDelete() { AppState.deletePrompt = { ...AppState.activeMenu }; AppState.activeMenu = null; this.render(); },
+    cancelDelete() { AppState.deletePrompt = null; this.render(); },
     confirmDelete() {
         const { type, id, parentId } = AppState.deletePrompt;
-        if (type === 'project') { 
-            AppState.projects = AppState.projects.filter(p => p.id !== id); 
-            AppState.tasks = AppState.tasks.filter(t => t.projectId !== id); 
-        } else if (type === 'task') { 
-            AppState.tasks = AppState.tasks.filter(t => t.id !== id); 
-        } else if (type === 'subtask') { 
-            AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.filter(s => s.id !== id) } : t); 
-        }
-        AppState.deletePrompt = null; 
-        this.save();
+        if (type === 'project') { AppState.projects = AppState.projects.filter(p => p.id !== id); AppState.tasks = AppState.tasks.filter(t => t.projectId !== id); }
+        else if (type === 'task') { AppState.tasks = AppState.tasks.filter(t => t.id !== id); }
+        else if (type === 'subtask') { AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.filter(s => s.id !== id) } : t); }
+        AppState.deletePrompt = null; this.save();
     },
     
     // --- ACTIONS TÂCHES ---
-    toggleTask(taskId){ 
-        AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,status:t.status==='todo'?'done':'todo'} : t); 
-        if(AppState.homeSearched) this.generateAction(); 
-        this.save(); 
-    },
-    
-    toggleSubtask(taskId,subtaskId){ 
-        AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,subtasks:t.subtasks.map(s=>s.id===subtaskId ? {...s,status:s.status==='todo'?'done':'todo'} : s)} : t); 
-        this.save(); 
-    },
+    toggleTask(taskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,status:t.status==='todo'?'done':'todo'} : t); if(AppState.homeSearched) this.generateAction(); this.save(); },
+    toggleSubtask(taskId,subtaskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,subtasks:t.subtasks.map(s=>s.id===subtaskId ? {...s,status:s.status==='todo'?'done':'todo'} : s)} : t); this.save(); },
     
     addTask(event){
-        event.preventDefault(); 
-        const form = event.target; 
-        const priorityBtn = form.querySelector('.priority-btn-selected');
+        event.preventDefault(); const form = event.target; const priorityBtn = form.querySelector('.priority-btn-selected');
         const name = document.getElementById('new-task-name').value;
         if(!name.trim()) return;
-        
-        AppState.tasks.unshift({
-            id: Date.now().toString(),
-            name,
-            projectId: document.getElementById('new-task-project').value || null,
-            duration: parseInt(document.getElementById('new-task-duration').value),
-            locations: this.getFormLocations(form),
-            priority: priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne',
-            status: 'todo',
-            subtasks: [],
-            note: ''
-        });
-        document.getElementById('new-task-name').value = ''; 
-        this.save();
+        AppState.tasks.unshift({id: Date.now().toString(), name, projectId: document.getElementById('new-task-project').value || null, duration: parseInt(document.getElementById('new-task-duration').value), locations: this.getFormLocations(form), priority: priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne', status: 'todo', subtasks: [], note: ''});
+        document.getElementById('new-task-name').value = ''; this.save();
     },
-    
     addProjectTask(projectId){
-        const input = document.getElementById(`project-quick-task-${projectId}`); 
-        if(!input || !input.value.trim()) return;
+        const input = document.getElementById(`project-quick-task-${projectId}`); if(!input || !input.value.trim()) return;
         AppState.tasks.unshift({id:Date.now().toString(), name:input.value, projectId:projectId, duration:15, locations:[], priority:'Moyenne', status:'todo', subtasks:[], note:''});
-        AppState.showProjectAddTaskModal = null; 
-        this.save();
+        AppState.showProjectAddTaskModal = null; this.save();
     },
-    
     addSubtask(taskId){
-        const input = document.getElementById(`task-quick-subtask-${taskId}`); 
-        if(!input || !input.value.trim()) return;
+        const input = document.getElementById(`task-quick-subtask-${taskId}`); if(!input || !input.value.trim()) return;
         AppState.tasks = AppState.tasks.map(t => t.id === taskId ? {...t, subtasks: [...(t.subtasks||[]), {id: Date.now().toString(), name:input.value, duration: 15, locations: [], priority: 'Moyenne', status: 'todo', note: ''}]} : t);
-        AppState.showProjectAddSubtaskModal = null; 
-        this.save();
+        AppState.showProjectAddSubtaskModal = null; this.save();
     },
-    
     addProject(){
-        const name=document.getElementById('new-proj-name').value; 
-        if(!name.trim()) return;
+        const name=document.getElementById('new-proj-name').value; if(!name.trim()) return;
         AppState.projects.push({id:Date.now().toString(), name, category:document.getElementById('new-proj-category').value, note:''});
-        AppState.showAddProject=false; 
-        this.save();
+        AppState.showAddProject=false; this.save();
     },
 
     // --- NAVIGATION DANS LES VUES ---
@@ -311,121 +215,82 @@ const App = {
         if (now - this.lastTapTime < 300) this.goToProject(projectId);
         this.lastTapTime = now;
     },
-    
-    goToProject(projectId) { 
-        AppState.expandedProjectId = projectId; 
-        this.setTab('projects'); 
-    },
-    toggleProjectExpand(id) { 
-        AppState.expandedProjectId = AppState.expandedProjectId === id ? null : id; 
-        this.render();
-    },
-    toggleAddProject() { 
-        AppState.showAddProject = !AppState.showAddProject; 
-        this.render();
-    },
-    setBankFilter(filter) { 
-        AppState.bankFilter = filter; 
-        this.render();
-    },
-    setBankPriorityFilter(priority) { 
-        AppState.bankPriorityFilter = priority; 
-        this.render();
-    },
-    setHomeTime(time) {
-        AppState.homeTime=time;
-        this.render();
-    },
-    toggleHomeLocation(loc) { 
-        AppState.homeLocations.includes(loc) ? AppState.homeLocations = AppState.homeLocations.filter(l => l !== loc) : AppState.homeLocations.push(loc); 
-        this.render(); 
-    },
+    goToProject(projectId) { AppState.expandedProjectId = projectId; this.setTab('projects'); },
+    toggleProjectExpand(id) { AppState.expandedProjectId = AppState.expandedProjectId === id ? null : id; this.render(); },
+    toggleAddProject() { AppState.showAddProject = !AppState.showAddProject; this.render(); },
+    setBankFilter(filter) { AppState.bankFilter = filter; this.render(); },
+    setBankPriorityFilter(priority) { AppState.bankPriorityFilter = priority; this.render(); },
+    setHomeTime(time) { AppState.homeTime=time; this.render(); },
+    toggleHomeLocation(loc) { AppState.homeLocations.includes(loc) ? AppState.homeLocations = AppState.homeLocations.filter(l => l !== loc) : AppState.homeLocations.push(loc); this.render(); },
 
-    // --- DRAG & DROP (MOTEUR BANQUE / PROJET) ---
-    handleDragStart(e, id, type, parentId = null) { 
-        e.dataTransfer.setData('text/plain', JSON.stringify({id, type, parentId})); 
-        e.currentTarget.classList.add('dragging'); 
-    },
-    handleDragEnd(e) { 
-        e.currentTarget.classList.remove('dragging'); 
-        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over')); 
-    },
-    handleDragOver(e) { 
-        e.preventDefault(); 
-        e.currentTarget.classList.add('drag-over'); 
-    },
-    handleDragLeave(e) { 
-        e.currentTarget.classList.remove('drag-over'); 
-    },
+    // --- DRAG & DROP GÉNÉRAL (Banque/Projets) ---
+    handleDragStart(e, id, type, parentId = null) { e.dataTransfer.setData('text/plain', JSON.stringify({id, type, parentId})); e.currentTarget.classList.add('dragging'); },
+    handleDragEnd(e) { e.currentTarget.classList.remove('dragging'); document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over')); },
+    handleDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); },
+    handleDragLeave(e) { e.currentTarget.classList.remove('drag-over'); },
     handleDrop(e, targetId, type, parentId = null) {
-        e.preventDefault(); 
-        e.currentTarget.classList.remove('drag-over');
+        e.preventDefault(); e.currentTarget.classList.remove('drag-over');
         try {
-            const data = JSON.parse(e.dataTransfer.getData('text/plain')); 
-            if (data.type !== type) return;
+            const data = JSON.parse(e.dataTransfer.getData('text/plain')); if (data.type !== type) return;
             if (type === 'task') {
-                const oldIndex = AppState.tasks.findIndex(t => t.id === data.id); 
-                const newIndex = AppState.tasks.findIndex(t => t.id === targetId);
-                if (oldIndex !== -1 && newIndex !== -1) { 
-                    const [moved] = AppState.tasks.splice(oldIndex, 1); 
-                    AppState.tasks.splice(newIndex, 0, moved); 
-                    this.save(); 
-                }
+                const oldIndex = AppState.tasks.findIndex(t => t.id === data.id); const newIndex = AppState.tasks.findIndex(t => t.id === targetId);
+                if (oldIndex !== -1 && newIndex !== -1) { const [moved] = AppState.tasks.splice(oldIndex, 1); AppState.tasks.splice(newIndex, 0, moved); this.save(); }
             } else if (type === 'subtask' && data.parentId === parentId) {
                 AppState.tasks = AppState.tasks.map(t => {
                     if (t.id === parentId) {
-                        const subs = [...t.subtasks]; 
-                        const oldIndex = subs.findIndex(s => s.id === data.id); 
-                        const newIndex = subs.findIndex(s => s.id === targetId);
-                        if (oldIndex !== -1 && newIndex !== -1) { 
-                            const [moved] = subs.splice(oldIndex, 1); 
-                            subs.splice(newIndex, 0, moved); 
-                        } 
-                        return {...t, subtasks: subs};
-                    } 
-                    return t;
-                }); 
+                        const subs = [...t.subtasks]; const oldIndex = subs.findIndex(s => s.id === data.id); const newIndex = subs.findIndex(s => s.id === targetId);
+                        if (oldIndex !== -1 && newIndex !== -1) { const [moved] = subs.splice(oldIndex, 1); subs.splice(newIndex, 0, moved); } return {...t, subtasks: subs};
+                    } return t;
+                }); this.save();
+            }
+        } catch(err) { console.error(err); }
+    },
+
+    // --- DRAG & DROP SPÉCIFIQUE (Plan validé) ---
+    handleScheduleDragStart(e, taskId, slotId) {
+        e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'schedule-task', sourceSlot: slotId}));
+        e.currentTarget.classList.add('opacity-50');
+    },
+    handleScheduleDragEnd(e) { e.currentTarget.classList.remove('opacity-50'); },
+    handleScheduleDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('border-cyan-500'); },
+    handleScheduleDragLeave(e) { e.currentTarget.classList.remove('border-cyan-500'); },
+    handleScheduleDrop(e, targetSlotId) {
+        e.preventDefault(); e.currentTarget.classList.remove('border-cyan-500');
+        try {
+            const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+            if (data.type !== 'schedule-task' || data.sourceSlot === targetSlotId) return;
+            const sourceSlot = AppState.validatedSchedule.find(s => s.slotId === data.sourceSlot);
+            const targetSlot = AppState.validatedSchedule.find(s => s.slotId === targetSlotId);
+            const taskIndex = sourceSlot.tasks.findIndex(t => t.id === data.id);
+            if (taskIndex !== -1) {
+                const [task] = sourceSlot.tasks.splice(taskIndex, 1);
+                targetSlot.tasks.push(task);
+                sourceSlot.usedTime -= task.duration; targetSlot.usedTime += task.duration;
                 this.save();
             }
         } catch(err) { console.error(err); }
     },
 
-    // --- NOUVEAU : DRAG & DROP SPÉCIFIQUE AU PLANNING ---
-    handleScheduleDragStart(e, taskId, slotId) {
-        e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'schedule-task', sourceSlot: slotId}));
-        e.currentTarget.classList.add('opacity-50'); // Effet visuel
+    // --- DRAG & DROP SPÉCIFIQUE (Brouillon) ---
+    handleDraftDragStart(e, taskId, slotId) {
+        e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'draft-task', sourceSlot: slotId}));
+        e.currentTarget.classList.add('opacity-50');
     },
-    handleScheduleDragEnd(e) {
-        e.currentTarget.classList.remove('opacity-50');
-    },
-    handleScheduleDragOver(e) {
-        e.preventDefault();
-        // Surligne la boîte de réception
-        e.currentTarget.classList.add('border-cyan-500');
-    },
-    handleScheduleDragLeave(e) {
-        e.currentTarget.classList.remove('border-cyan-500');
-    },
-    handleScheduleDrop(e, targetSlotId) {
-        e.preventDefault();
-        e.currentTarget.classList.remove('border-cyan-500');
+    handleDraftDragEnd(e) { e.currentTarget.classList.remove('opacity-50'); },
+    handleDraftDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('border-amber-500'); },
+    handleDraftDragLeave(e) { e.currentTarget.classList.remove('border-amber-500'); },
+    handleDraftDrop(e, targetSlotId) {
+        e.preventDefault(); e.currentTarget.classList.remove('border-amber-500');
         try {
             const data = JSON.parse(e.dataTransfer.getData('text/plain'));
-            if (data.type !== 'schedule-task') return;
-            if (data.sourceSlot === targetSlotId) return; // Si déposé au même endroit
-
-            const sourceSlot = AppState.validatedSchedule.find(s => s.slotId === data.sourceSlot);
-            const targetSlot = AppState.validatedSchedule.find(s => s.slotId === targetSlotId);
-            
+            if (data.type !== 'draft-task' || data.sourceSlot === targetSlotId) return;
+            const sourceSlot = AppState.draftSchedule.find(s => s.slotId === data.sourceSlot);
+            const targetSlot = AppState.draftSchedule.find(s => s.slotId === targetSlotId);
             const taskIndex = sourceSlot.tasks.findIndex(t => t.id === data.id);
             if (taskIndex !== -1) {
                 const [task] = sourceSlot.tasks.splice(taskIndex, 1);
-                targetSlot.tasks.push(task); // Ajoute à la nouvelle zone
-                
-                // Recalcule le temps utilisé pour les deux créneaux
-                sourceSlot.usedTime -= task.duration;
-                targetSlot.usedTime += task.duration;
-                
+                targetSlot.tasks.push(task);
+                sourceSlot.usedTime -= task.duration; targetSlot.usedTime += task.duration;
                 this.save();
             }
         } catch(err) { console.error(err); }
@@ -444,9 +309,7 @@ const App = {
                     }
                 });
             }
-            if (!hasActiveSubtasks && t.status !== 'done') {
-                allActive.push({...t, isSubtask: false, projectId: t.projectId});
-            }
+            if (!hasActiveSubtasks && t.status !== 'done') allActive.push({...t, isSubtask: false, projectId: t.projectId});
         });
         return allActive;
     },
@@ -454,7 +317,6 @@ const App = {
     generateAction() {
         const priorityWeights={'Haute':3,'Moyenne':2,'Basse':1};
         let allAvailable = [];
-        
         AppState.tasks.forEach(t => {
             let hasActiveSubtasks = false;
             if (t.subtasks && t.subtasks.length > 0) {
@@ -477,18 +339,12 @@ const App = {
         });
         
         allAvailable.sort((a,b)=> {
-            const dA = a.duration || 15; const dB = b.duration || 15; 
-            if (dA !== dB) return dB - dA;
-            const pA = priorityWeights[a.priority || 'Moyenne']; const pB = priorityWeights[b.priority || 'Moyenne']; 
-            if (pA !== pB) return pB - pA;
-            if (a.isSubtask && !b.isSubtask) return -1; 
-            if (!a.isSubtask && b.isSubtask) return 1; 
-            return 0;
+            const dA = a.duration || 15; const dB = b.duration || 15; if (dA !== dB) return dB - dA;
+            const pA = priorityWeights[a.priority || 'Moyenne']; const pB = priorityWeights[b.priority || 'Moyenne']; if (pA !== pB) return pB - pA;
+            if (a.isSubtask && !b.isSubtask) return -1; if (!a.isSubtask && b.isSubtask) return 1; return 0;
         });
         
-        AppState.homeSuggestions = allAvailable.slice(0,5); 
-        AppState.homeSearched=true; 
-        this.render();
+        AppState.homeSuggestions = allAvailable.slice(0,5); AppState.homeSearched=true; this.render();
     },
 
     addAvailability(event) {
@@ -498,38 +354,25 @@ const App = {
         const start = document.getElementById('plan-start').value;
         const end = document.getElementById('plan-end').value;
         const locations = this.getFormLocations(form);
-        
         const [startH, startM] = start.split(':').map(Number);
         const [endH, endM] = end.split(':').map(Number);
         let duration = (endH * 60 + endM) - (startH * 60 + startM);
         if (duration <= 0) duration += 24 * 60;
-
         AppState.availabilities.push({ id: Date.now().toString(), day, start, end, duration, locations });
         this.save();
     },
 
-    removeAvailability(id) {
-        AppState.availabilities = AppState.availabilities.filter(a => a.id !== id);
-        this.save();
-    },
+    removeAvailability(id) { AppState.availabilities = AppState.availabilities.filter(a => a.id !== id); this.save(); },
 
     generateSchedule() {
         const priorityWeights={'Haute':3,'Moyenne':2,'Basse':1};
         let availableTasks = this.getFlatActiveTasks();
-        
         availableTasks.sort((a,b) => {
-            // NOUVEAUTÉ : Intelligence de Séquence (Si nom commence par "1.", "2." dans le même projet)
             if (a.projectId && a.projectId === b.projectId) {
-                const numA = parseInt(a.name);
-                const numB = parseInt(b.name);
-                if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
-                    return numA - numB; // Ordonne numériquement la suite
-                }
+                const numA = parseInt(a.name); const numB = parseInt(b.name);
+                if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB; 
             }
-            
-            // Suite classique par priorité et durée
-            const pA = priorityWeights[a.priority || 'Moyenne'];
-            const pB = priorityWeights[b.priority || 'Moyenne'];
+            const pA = priorityWeights[a.priority || 'Moyenne']; const pB = priorityWeights[b.priority || 'Moyenne'];
             if (pA !== pB) return pB - pA;
             return (b.duration || 15) - (a.duration || 15);
         });
@@ -539,44 +382,25 @@ const App = {
 
         AppState.availabilities.forEach(slot => {
             const maxTime = Math.floor(slot.duration * 0.85); 
-            let currentUsedTime = 0;
-            let slotTasks = [];
+            let currentUsedTime = 0; let slotTasks = [];
 
             for (let i = 0; i < availableTasks.length; i++) {
                 const task = availableTasks[i];
-                
-                // NOUVEAUTÉ : Vérification des dépendances pour respecter l'ordre
                 const numTask = parseInt(task.name);
                 if (!isNaN(numTask) && numTask > 1) {
-                    // Vérifie si la tâche précédente (N-1) du même projet est toujours en attente
                     const prevTask = availableTasks.find(t => t.projectId === task.projectId && parseInt(t.name) === (numTask - 1));
-                    if (prevTask && !usedTaskIds.has(prevTask.id)) {
-                        continue; // On bloque l'ajout de cette tâche, elle doit attendre son tour !
-                    }
+                    if (prevTask && !usedTaskIds.has(prevTask.id)) continue; 
                 }
 
                 if (!usedTaskIds.has(task.id) && (currentUsedTime + task.duration) <= maxTime) {
                     let matchLoc = true;
-                    if (slot.locations && slot.locations.length > 0) {
-                        matchLoc = (!task.locations || task.locations.length === 0) ? false : task.locations.some(l => slot.locations.includes(l));
-                    }
-                    if (matchLoc) {
-                        slotTasks.push(task);
-                        currentUsedTime += task.duration;
-                        usedTaskIds.add(task.id);
-                    }
+                    if (slot.locations && slot.locations.length > 0) { matchLoc = (!task.locations || task.locations.length === 0) ? false : task.locations.some(l => slot.locations.includes(l)); }
+                    if (matchLoc) { slotTasks.push(task); currentUsedTime += task.duration; usedTaskIds.add(task.id); }
                 }
             }
-
-            newSchedule.push({
-                slotId: slot.id, day: slot.day, start: slot.start, end: slot.end,
-                totalDuration: slot.duration, usedTime: currentUsedTime, tasks: slotTasks
-            });
+            newSchedule.push({ slotId: slot.id, day: slot.day, start: slot.start, end: slot.end, totalDuration: slot.duration, usedTime: currentUsedTime, tasks: slotTasks });
         });
-
-        AppState.validatedSchedule = null;
-        AppState.draftSchedule = newSchedule;
-        this.save();
+        AppState.validatedSchedule = null; AppState.draftSchedule = newSchedule; this.save();
     },
 
     replaceScheduledTask(slotId, taskId) {
@@ -596,13 +420,8 @@ const App = {
         for (let task of availableTasks) {
             if (!usedTaskIds.has(task.id) && task.id !== oldTask.id && task.duration <= timeRemaining) {
                 let matchLoc = true;
-                if (slotAvailability.locations && slotAvailability.locations.length > 0) {
-                    matchLoc = (!task.locations || task.locations.length === 0) ? false : task.locations.some(l => slotAvailability.locations.includes(l));
-                }
-                if (matchLoc) {
-                    replacement = task;
-                    break;
-                }
+                if (slotAvailability.locations && slotAvailability.locations.length > 0) matchLoc = (!task.locations || task.locations.length === 0) ? false : task.locations.some(l => slotAvailability.locations.includes(l));
+                if (matchLoc) { replacement = task; break; }
             }
         }
 
@@ -615,10 +434,7 @@ const App = {
         }
     },
 
-    toggleEditSchedule() {
-        AppState.isEditingSchedule = !AppState.isEditingSchedule;
-        this.render();
-    },
+    toggleEditSchedule() { AppState.isEditingSchedule = !AppState.isEditingSchedule; this.render(); },
 
     removeTaskFromSchedule(slotId, taskId) {
         const slot = AppState.validatedSchedule.find(s => s.slotId === slotId);
@@ -631,41 +447,33 @@ const App = {
         }
     },
 
-    validateSchedule() {
-        AppState.validatedSchedule = AppState.draftSchedule;
-        AppState.draftSchedule = null;
-        AppState.isEditingSchedule = false;
-        this.save();
+    removeTaskFromDraft(slotId, taskId) {
+        const slot = AppState.draftSchedule.find(s => s.slotId === slotId);
+        const taskIndex = slot.tasks.findIndex(t => t.id === taskId);
+        if (taskIndex !== -1) {
+            const task = slot.tasks[taskIndex];
+            slot.tasks.splice(taskIndex, 1);
+            slot.usedTime -= task.duration;
+            this.save();
+        }
     },
 
-    resetSchedule() {
-        AppState.validatedSchedule = null;
-        AppState.draftSchedule = null;
-        AppState.isEditingSchedule = false;
-        this.save();
-    },
+    validateSchedule() { AppState.validatedSchedule = AppState.draftSchedule; AppState.draftSchedule = null; AppState.isEditingSchedule = false; this.save(); },
+    resetSchedule() { AppState.validatedSchedule = null; AppState.draftSchedule = null; AppState.isEditingSchedule = false; this.save(); },
 
     // ==========================================
     // 4. RENDU VISUEL (HTML COMPONENTS)
     // ==========================================
     
     renderTask(task, minimal=false, parentId=null, parentName=null){
-        const isDone = task.status === 'done'; 
-        const isSubtask = parentId !== null; 
-        const type = isSubtask ? 'subtask' : 'task';
+        const isDone = task.status === 'done'; const isSubtask = parentId !== null; const type = isSubtask ? 'subtask' : 'task';
         const argParent = isSubtask ? `, '${parentId}'` : '';
         const priorityColors = {'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
         const hasLocations = task.locations && task.locations.length > 0;
-        
-        let projectName = ''; 
-        if (task.projectId) { 
-            const proj = AppState.projects.find(p => p.id === task.projectId); 
-            if (proj) projectName = proj.name; 
-        }
+        let projectName = ''; if (task.projectId) { const proj = AppState.projects.find(p => p.id === task.projectId); if (proj) projectName = proj.name; }
 
         return `
-        <div draggable="true" onclick="App.handleRowTap('${task.projectId}')" ondragstart="App.handleDragStart(event, '${task.id}', '${type}'${argParent})" ondragend="App.handleDragEnd(event)" ondragover="App.handleDragOver(event)" ondragleave="App.handleDragLeave(event)" ondrop="App.handleDrop(event, '${task.id}', '${type}'${argParent})"
-             class="draggable-item group flex items-center justify-between p-4 rounded-2xl cursor-grab transition-all duration-300 border ${isDone?'bg-[#13161c] border-gray-800/30 opacity-60':'bg-[#1A1D24] border-gray-800 hover:border-gray-700'}">
+        <div draggable="true" onclick="App.handleRowTap('${task.projectId}')" ondragstart="App.handleDragStart(event, '${task.id}', '${type}'${argParent})" ondragend="App.handleDragEnd(event)" ondragover="App.handleDragOver(event)" ondragleave="App.handleDragLeave(event)" ondrop="App.handleDrop(event, '${task.id}', '${type}'${argParent})" class="draggable-item group flex items-center justify-between p-4 rounded-2xl cursor-grab transition-all duration-300 border ${isDone?'bg-[#13161c] border-gray-800/30 opacity-60':'bg-[#1A1D24] border-gray-800 hover:border-gray-700'}">
             <div class="flex items-center gap-4 overflow-hidden flex-1">
                 <button onclick="${isSubtask ? `App.toggleSubtask('${parentId}','${task.id}')` : `App.toggleTask('${task.id}')`}; event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer p-1 -ml-1">
                     ${isDone?'<i data-lucide="check-circle-2" class="text-emerald-500"></i>':'<i data-lucide="circle" class="text-gray-600"></i>'}
@@ -689,11 +497,9 @@ const App = {
         </div>`;
     },
 
-    // Rendu spécifique pour les tâches encartées dans le planning (design allégé)
     renderScheduleTask(task, slotId) {
         const isEditing = AppState.isEditingSchedule;
         const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
-        
         return `
         <div ${isEditing ? `draggable="true" ondragstart="App.handleScheduleDragStart(event, '${task.id}', '${slotId}')" ondragend="App.handleScheduleDragEnd(event)" class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-600 cursor-grab"` : `class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-800/50"`}>
             <div class="flex-1 min-w-0 pointer-events-none">
@@ -703,11 +509,7 @@ const App = {
                     <span class="px-1.5 py-0.5 rounded-md border ${priorityColors[task.priority || 'Moyenne']}">${task.priority || 'Moyenne'}</span>
                 </div>
             </div>
-            ${isEditing ? `
-                <button onclick="App.removeTaskFromSchedule('${slotId}', '${task.id}')" class="shrink-0 p-2 text-gray-500 hover:text-red-500 bg-gray-800/50 rounded-lg ml-2 transition-colors">
-                    <i data-lucide="x" class="w-4 h-4"></i>
-                </button>
-            ` : ''}
+            ${isEditing ? `<button onclick="App.removeTaskFromSchedule('${slotId}', '${task.id}')" class="shrink-0 p-2 text-gray-500 hover:text-red-500 bg-gray-800/50 rounded-lg ml-2 transition-colors"><i data-lucide="x" class="w-4 h-4"></i></button>` : ''}
         </div>`;
     },
 
@@ -726,9 +528,7 @@ const App = {
                         <button onclick="App.resetSchedule()" class="text-xs bg-red-900/30 text-red-500 px-3 py-1.5 rounded-lg hover:text-white transition-colors">Reset</button>
                     </div>
                 </div>
-                
                 ${AppState.isEditingSchedule ? '<p class="text-xs text-cyan-400 text-center animate-pulse mb-2">Glisse les tâches pour les déplacer ou supprime les avec (X)</p>' : ''}
-
                 <div class="space-y-4">
                     ${AppState.validatedSchedule.map(slot => `
                         <div class="bg-[#1A1D24] rounded-2xl border ${AppState.isEditingSchedule ? 'border-dashed border-gray-600 transition-colors' : 'border-gray-800'} overflow-hidden"
@@ -747,27 +547,44 @@ const App = {
         }
 
         if (AppState.draftSchedule) {
+            const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
             return `
             <div class="space-y-6">
                 <div class="px-1">
                     <h2 class="text-xl font-black text-amber-400 flex items-center gap-2"><i data-lucide="calendar-clock"></i> Brouillon généré</h2>
-                    <p class="text-xs text-gray-500 mt-1">Règle de 85% appliquée. Remplace les tâches qui ne te conviennent pas, puis valide.</p>
+                    <p class="text-xs text-gray-500 mt-1">Glisse les tâches entre les créneaux, supprime-les ou remplace-les avant de valider.</p>
                 </div>
                 
                 <div class="space-y-4">
                     ${AppState.draftSchedule.map(slot => `
-                        <div class="bg-[#1A1D24] rounded-2xl border border-amber-500/30 overflow-hidden relative">
-                            <div class="bg-amber-500/10 px-4 py-3 border-b border-amber-500/30 flex justify-between items-center">
+                        <div class="bg-[#1A1D24] rounded-2xl border border-amber-500/30 overflow-hidden relative transition-colors"
+                             ondragover="App.handleDraftDragOver(event)" ondragleave="App.handleDraftDragLeave(event)" ondrop="App.handleDraftDrop(event, '${slot.slotId}')">
+                            <div class="bg-amber-500/10 px-4 py-3 border-b border-amber-500/30 flex justify-between items-center pointer-events-none">
                                 <span class="font-bold text-amber-500 text-sm">${slot.day} • ${slot.start} - ${slot.end}</span>
                                 <div class="text-right">
                                     <div class="text-xs font-bold text-amber-400">${slot.usedTime}m prévus</div>
                                     <div class="text-[10px] text-gray-500">Marge: ${slot.totalDuration - slot.usedTime}m libres</div>
                                 </div>
                             </div>
-                            <div class="p-3 space-y-3 bg-[#0D0F12]/50">
-                                ${slot.tasks.length === 0 ? '<p class="text-xs text-gray-500 text-center py-2">Rien ne rentre ici.</p>' : slot.tasks.map(t => `
+                            <div class="p-3 space-y-3 bg-[#0D0F12]/50 min-h-[60px]">
+                                ${slot.tasks.length === 0 ? '<p class="text-xs text-gray-500 text-center py-2 pointer-events-none">Rien ne rentre ici.</p>' : slot.tasks.map(t => `
                                     <div class="flex items-stretch gap-2">
-                                        <div class="flex-1 pointer-events-none opacity-80">${this.renderTask(t, true)}</div>
+                                        <div class="flex-1">
+                                            <div draggable="true" ondragstart="App.handleDraftDragStart(event, '${t.id}', '${slot.slotId}')" ondragend="App.handleDraftDragEnd(event)" class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-amber-500/30 cursor-grab">
+                                                <div class="flex-1 min-w-0 pointer-events-none">
+                                                    <h4 class="font-bold text-sm text-gray-200 truncate">${t.name}</h4>
+                                                    <div class="flex items-center gap-2 mt-1 text-[10px] text-gray-500">
+                                                        <span><i data-lucide="clock" class="w-3 h-3 inline"></i> ${t.duration}m</span>
+                                                        <span class="px-1.5 py-0.5 rounded-md border text-amber-400 bg-amber-500/10 border-amber-500/30">${t.priority || 'Moyenne'}</span>
+                                                    </div>
+                                                </div>
+                                                <div class="flex items-center shrink-0">
+                                                    <button onclick="App.removeTaskFromDraft('${slot.slotId}', '${t.id}')" class="p-2 text-gray-500 hover:text-red-500 rounded-lg transition-colors" title="Supprimer">
+                                                        <i data-lucide="x" class="w-4 h-4"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
                                         <button onclick="App.replaceScheduledTask('${slot.slotId}', '${t.id}')" class="shrink-0 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded-xl px-3 flex flex-col items-center justify-center border border-gray-700 transition-colors">
                                             <i data-lucide="refresh-cw" class="w-4 h-4 mb-1"></i>
                                             <span class="text-[9px] uppercase font-bold">Changer</span>
@@ -974,7 +791,7 @@ const App = {
 
     renderSettings() {
         const renderList = (type, placeholder, isNumber) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Lieux' : '<i data-lucide="tag" class="text-indigo-400 w-4 h-4"></i> Catégories'}</h3><div class="flex gap-2 mb-4"><input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}', ${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
-        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage', false)}${renderList('categories', 'Ex: Famille', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.2.1 (Modification & Planning)</span></div></div>`;
+        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage', false)}${renderList('categories', 'Ex: Famille', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.2.2 (Planning Avancé)</span></div></div>`;
     },
     
     // ==========================================
