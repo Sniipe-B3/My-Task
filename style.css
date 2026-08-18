@@ -1,0 +1,47 @@
+/* Masquer la barre de défilement */
+::-webkit-scrollbar { 
+    width: 0px; 
+    background: transparent; 
+}
+
+/* Améliorations tactiles */
+body { 
+    -webkit-tap-highlight-color: transparent; 
+    touch-action: manipulation; 
+}
+
+/* Drag & Drop */
+.draggable-item { 
+    cursor: grab; 
+    transition: transform 0.2s ease, background-color 0.2s ease; 
+}
+
+.draggable-item:active { 
+    cursor: grabbing; 
+}
+
+.dragging { 
+    opacity: 0.4; 
+    background: #13161c; 
+    transform: scale(1.02); 
+}
+
+.drag-over { 
+    border-top: 2px dashed #06b6d4 !important; 
+}
+
+/* Animations */
+@keyframes slideUp {
+    from { 
+        transform: translateY(100%); 
+        opacity: 0; 
+    }
+    to { 
+        transform: translateY(0); 
+        opacity: 1; 
+    }
+}
+
+.animate-slide-up { 
+    animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; 
+}
