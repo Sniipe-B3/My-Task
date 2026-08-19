@@ -36,6 +36,7 @@ const AppState = {
     availabilities: JSON.parse(localStorage.getItem('osdevie_availabilities')) || [],
     draftSchedule: JSON.parse(localStorage.getItem('osdevie_draftSchedule')) || null,
     validatedSchedule: JSON.parse(localStorage.getItem('osdevie_validatedSchedule')) || null,
+    bufferPercent: JSON.parse(localStorage.getItem('osdevie_buffer')) || 85,
     daysOfWeek: ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
 
     isEditingSchedule: false, 
@@ -61,13 +62,11 @@ const App = {
         localStorage.setItem('osdevie_availabilities', JSON.stringify(AppState.availabilities));
         localStorage.setItem('osdevie_draftSchedule', JSON.stringify(AppState.draftSchedule));
         localStorage.setItem('osdevie_validatedSchedule', JSON.stringify(AppState.validatedSchedule));
+        localStorage.setItem('osdevie_buffer', JSON.stringify(AppState.bufferPercent));
         this.render();
     },
     
-    setTab(tab) {
-        AppState.activeTab = tab;
-        this.render();
-    },
+    setTab(tab) { AppState.activeTab = tab; this.render(); },
 
     // --- GESTION DES PARAMÈTRES ---
     addSetting(type, inputId) {
@@ -90,12 +89,10 @@ const App = {
         this.save();
     },
 
+    setBufferPercent(val) { AppState.bufferPercent = parseInt(val); this.save(); },
+
     // --- MENUS MODAUX & FORMULAIRES ---
-    openMenu(e, type, id, parentId = null) { 
-        if (e) { e.preventDefault(); e.stopPropagation(); } 
-        AppState.activeMenu = { type, id, parentId }; 
-        this.render(); 
-    },
+    openMenu(e, type, id, parentId = null) { if (e) { e.preventDefault(); e.stopPropagation(); } AppState.activeMenu = { type, id, parentId }; this.render(); },
     closeMenu() { AppState.activeMenu = null; this.render(); },
     
     openEdit() {
@@ -130,9 +127,7 @@ const App = {
     },
 
     saveEdit(event) {
-        event.preventDefault(); 
-        const form = event.target; 
-        const { type, id, parentId } = AppState.editPrompt;
+        event.preventDefault(); const form = event.target; const { type, id, parentId } = AppState.editPrompt;
         const name = document.getElementById('edit-name').value;
         if (type === 'project') {
             AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, name, category: document.getElementById('edit-proj-category').value } : p);
@@ -246,22 +241,27 @@ const App = {
         } catch(err) { console.error(err); }
     },
 
-    // --- DRAG & DROP SPÉCIFIQUE (Plan validé) ---
-    handleScheduleDragStart(e, taskId, slotId) {
-        e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'schedule-task', sourceSlot: slotId}));
-        e.currentTarget.classList.add('opacity-50');
-    },
+    // --- DRAG & DROP SPÉCIFIQUE (Plan et Brouillon) ---
+    handleScheduleDragStart(e, taskId, slotId) { e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'schedule-task', sourceSlot: slotId})); e.currentTarget.classList.add('opacity-50'); },
     handleScheduleDragEnd(e) { e.currentTarget.classList.remove('opacity-50'); },
-    handleScheduleDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('border-cyan-500'); },
-    handleScheduleDragLeave(e) { e.currentTarget.classList.remove('border-cyan-500'); },
-    handleScheduleDrop(e, targetSlotId) {
+    handleDraftDragStart(e, taskId, slotId) { e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'draft-task', sourceSlot: slotId})); e.currentTarget.classList.add('opacity-50'); },
+    handleDraftDragEnd(e) { e.currentTarget.classList.remove('opacity-50'); },
+    
+    // Gère le survol du créneau global (si l'on veut ajouter tout à la fin)
+    handleSlotDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('border-cyan-500'); },
+    handleSlotDragLeave(e) { e.currentTarget.classList.remove('border-cyan-500'); },
+    handleSlotDrop(e, targetSlotId, isDraftMode) {
         e.preventDefault(); e.currentTarget.classList.remove('border-cyan-500');
         try {
             const data = JSON.parse(e.dataTransfer.getData('text/plain'));
-            if (data.type !== 'schedule-task' || data.sourceSlot === targetSlotId) return;
-            const sourceSlot = AppState.validatedSchedule.find(s => s.slotId === data.sourceSlot);
-            const targetSlot = AppState.validatedSchedule.find(s => s.slotId === targetSlotId);
+            if ((isDraftMode && data.type !== 'draft-task') || (!isDraftMode && data.type !== 'schedule-task')) return;
+            if (data.sourceSlot === targetSlotId) return;
+
+            const scheduleArray = isDraftMode ? AppState.draftSchedule : AppState.validatedSchedule;
+            const sourceSlot = scheduleArray.find(s => s.slotId === data.sourceSlot);
+            const targetSlot = scheduleArray.find(s => s.slotId === targetSlotId);
             const taskIndex = sourceSlot.tasks.findIndex(t => t.id === data.id);
+            
             if (taskIndex !== -1) {
                 const [task] = sourceSlot.tasks.splice(taskIndex, 1);
                 targetSlot.tasks.push(task);
@@ -271,26 +271,31 @@ const App = {
         } catch(err) { console.error(err); }
     },
 
-    // --- DRAG & DROP SPÉCIFIQUE (Brouillon) ---
-    handleDraftDragStart(e, taskId, slotId) {
-        e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'draft-task', sourceSlot: slotId}));
-        e.currentTarget.classList.add('opacity-50');
-    },
-    handleDraftDragEnd(e) { e.currentTarget.classList.remove('opacity-50'); },
-    handleDraftDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('border-amber-500'); },
-    handleDraftDragLeave(e) { e.currentTarget.classList.remove('border-amber-500'); },
-    handleDraftDrop(e, targetSlotId) {
-        e.preventDefault(); e.currentTarget.classList.remove('border-amber-500');
+    // Gère le survol d'une tâche précise (pour insérer avant elle et réorganiser)
+    handleTaskDragOver(e) { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.borderTop = "2px solid #06b6d4"; },
+    handleTaskDragLeave(e) { e.currentTarget.style.borderTop = ""; },
+    handleTaskItemDrop(e, targetSlotId, targetTaskId) {
+        e.preventDefault(); e.stopPropagation(); e.currentTarget.style.borderTop = "";
         try {
             const data = JSON.parse(e.dataTransfer.getData('text/plain'));
-            if (data.type !== 'draft-task' || data.sourceSlot === targetSlotId) return;
-            const sourceSlot = AppState.draftSchedule.find(s => s.slotId === data.sourceSlot);
-            const targetSlot = AppState.draftSchedule.find(s => s.slotId === targetSlotId);
+            const isDraft = data.type === 'draft-task';
+            if (data.type !== 'schedule-task' && !isDraft) return;
+
+            const scheduleArray = isDraft ? AppState.draftSchedule : AppState.validatedSchedule;
+            const sourceSlot = scheduleArray.find(s => s.slotId === data.sourceSlot);
+            const targetSlot = scheduleArray.find(s => s.slotId === targetSlotId);
+            
             const taskIndex = sourceSlot.tasks.findIndex(t => t.id === data.id);
             if (taskIndex !== -1) {
                 const [task] = sourceSlot.tasks.splice(taskIndex, 1);
-                targetSlot.tasks.push(task);
-                sourceSlot.usedTime -= task.duration; targetSlot.usedTime += task.duration;
+                const targetTaskIndex = targetSlot.tasks.findIndex(t => t.id === targetTaskId);
+                
+                if (targetTaskIndex !== -1) { targetSlot.tasks.splice(targetTaskIndex, 0, task); } 
+                else { targetSlot.tasks.push(task); }
+                
+                if (sourceSlot.slotId !== targetSlot.slotId) {
+                    sourceSlot.usedTime -= task.duration; targetSlot.usedTime += task.duration;
+                }
                 this.save();
             }
         } catch(err) { console.error(err); }
@@ -381,7 +386,7 @@ const App = {
         let usedTaskIds = new Set();
 
         AppState.availabilities.forEach(slot => {
-            const maxTime = Math.floor(slot.duration * 0.85); 
+            const maxTime = Math.floor(slot.duration * (AppState.bufferPercent / 100));
             let currentUsedTime = 0; let slotTasks = [];
 
             for (let i = 0; i < availableTasks.length; i++) {
@@ -413,7 +418,7 @@ const App = {
         AppState.draftSchedule.forEach(s => s.tasks.forEach(t => usedTaskIds.add(t.id)));
         usedTaskIds.delete(oldTask.id); 
         
-        const timeRemaining = (scheduleSlot.totalDuration * 0.85) - (scheduleSlot.usedTime - oldTask.duration);
+        const timeRemaining = (scheduleSlot.totalDuration * (AppState.bufferPercent / 100)) - (scheduleSlot.usedTime - oldTask.duration);
         let availableTasks = this.getFlatActiveTasks();
         
         let replacement = null;
@@ -501,7 +506,7 @@ const App = {
         const isEditing = AppState.isEditingSchedule;
         const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
         return `
-        <div ${isEditing ? `draggable="true" ondragstart="App.handleScheduleDragStart(event, '${task.id}', '${slotId}')" ondragend="App.handleScheduleDragEnd(event)" class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-600 cursor-grab"` : `class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-800/50"`}>
+        <div onclick="App.handleRowTap('${task.projectId}')" ${isEditing ? `draggable="true" ondragstart="App.handleScheduleDragStart(event, '${task.id}', '${slotId}')" ondragend="App.handleScheduleDragEnd(event)" ondragover="App.handleTaskDragOver(event)" ondragleave="App.handleTaskDragLeave(event)" ondrop="App.handleTaskItemDrop(event, '${slotId}', '${task.id}')" class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-600 cursor-grab"` : `class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-800/50 cursor-pointer"`}>
             <div class="flex-1 min-w-0 pointer-events-none">
                 <h4 class="font-bold text-sm text-gray-200 truncate">${task.name}</h4>
                 <div class="flex items-center gap-2 mt-1 text-[10px] text-gray-500">
@@ -509,7 +514,7 @@ const App = {
                     <span class="px-1.5 py-0.5 rounded-md border ${priorityColors[task.priority || 'Moyenne']}">${task.priority || 'Moyenne'}</span>
                 </div>
             </div>
-            ${isEditing ? `<button onclick="App.removeTaskFromSchedule('${slotId}', '${task.id}')" class="shrink-0 p-2 text-gray-500 hover:text-red-500 bg-gray-800/50 rounded-lg ml-2 transition-colors"><i data-lucide="x" class="w-4 h-4"></i></button>` : ''}
+            ${isEditing ? `<button onclick="event.stopPropagation(); App.removeTaskFromSchedule('${slotId}', '${task.id}')" class="shrink-0 p-2 text-gray-500 hover:text-red-500 bg-gray-800/50 rounded-lg ml-2 transition-colors"><i data-lucide="x" class="w-4 h-4"></i></button>` : ''}
         </div>`;
     },
 
@@ -528,11 +533,11 @@ const App = {
                         <button onclick="App.resetSchedule()" class="text-xs bg-red-900/30 text-red-500 px-3 py-1.5 rounded-lg hover:text-white transition-colors">Reset</button>
                     </div>
                 </div>
-                ${AppState.isEditingSchedule ? '<p class="text-xs text-cyan-400 text-center animate-pulse mb-2">Glisse les tâches pour les déplacer ou supprime les avec (X)</p>' : ''}
+                ${AppState.isEditingSchedule ? '<p class="text-xs text-cyan-400 text-center animate-pulse mb-2">Glisse les tâches pour changer l\'ordre ou le créneau</p>' : ''}
                 <div class="space-y-4">
                     ${AppState.validatedSchedule.map(slot => `
                         <div class="bg-[#1A1D24] rounded-2xl border ${AppState.isEditingSchedule ? 'border-dashed border-gray-600 transition-colors' : 'border-gray-800'} overflow-hidden"
-                             ${AppState.isEditingSchedule ? `ondragover="App.handleScheduleDragOver(event)" ondragleave="App.handleScheduleDragLeave(event)" ondrop="App.handleScheduleDrop(event, '${slot.slotId}')"` : ''}>
+                             ${AppState.isEditingSchedule ? `ondragover="App.handleSlotDragOver(event)" ondragleave="App.handleSlotDragLeave(event)" ondrop="App.handleSlotDrop(event, '${slot.slotId}', false)"` : ''}>
                             <div class="bg-gray-800/30 px-4 py-2 border-b border-gray-800 flex justify-between items-center pointer-events-none">
                                 <span class="font-bold text-white text-sm">${slot.day} • ${slot.start} - ${slot.end}</span>
                                 <span class="text-xs text-gray-500">${slot.usedTime}m / ${slot.totalDuration}m</span>
@@ -547,18 +552,17 @@ const App = {
         }
 
         if (AppState.draftSchedule) {
-            const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
             return `
             <div class="space-y-6">
                 <div class="px-1">
                     <h2 class="text-xl font-black text-amber-400 flex items-center gap-2"><i data-lucide="calendar-clock"></i> Brouillon généré</h2>
-                    <p class="text-xs text-gray-500 mt-1">Glisse les tâches entre les créneaux, supprime-les ou remplace-les avant de valider.</p>
+                    <p class="text-xs text-gray-500 mt-1">Glisse les tâches pour modifier l'ordre, supprime-les ou remplace-les avant de valider.</p>
                 </div>
                 
                 <div class="space-y-4">
                     ${AppState.draftSchedule.map(slot => `
                         <div class="bg-[#1A1D24] rounded-2xl border border-amber-500/30 overflow-hidden relative transition-colors"
-                             ondragover="App.handleDraftDragOver(event)" ondragleave="App.handleDraftDragLeave(event)" ondrop="App.handleDraftDrop(event, '${slot.slotId}')">
+                             ondragover="App.handleSlotDragOver(event)" ondragleave="App.handleSlotDragLeave(event)" ondrop="App.handleSlotDrop(event, '${slot.slotId}', true)">
                             <div class="bg-amber-500/10 px-4 py-3 border-b border-amber-500/30 flex justify-between items-center pointer-events-none">
                                 <span class="font-bold text-amber-500 text-sm">${slot.day} • ${slot.start} - ${slot.end}</span>
                                 <div class="text-right">
@@ -570,7 +574,7 @@ const App = {
                                 ${slot.tasks.length === 0 ? '<p class="text-xs text-gray-500 text-center py-2 pointer-events-none">Rien ne rentre ici.</p>' : slot.tasks.map(t => `
                                     <div class="flex items-stretch gap-2">
                                         <div class="flex-1">
-                                            <div draggable="true" ondragstart="App.handleDraftDragStart(event, '${t.id}', '${slot.slotId}')" ondragend="App.handleDraftDragEnd(event)" class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-amber-500/30 cursor-grab">
+                                            <div onclick="App.handleRowTap('${t.projectId}')" draggable="true" ondragstart="App.handleDraftDragStart(event, '${t.id}', '${slot.slotId}')" ondragend="App.handleDraftDragEnd(event)" ondragover="App.handleTaskDragOver(event)" ondragleave="App.handleTaskDragLeave(event)" ondrop="App.handleTaskItemDrop(event, '${slot.slotId}', '${t.id}')" class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-amber-500/30 cursor-grab">
                                                 <div class="flex-1 min-w-0 pointer-events-none">
                                                     <h4 class="font-bold text-sm text-gray-200 truncate">${t.name}</h4>
                                                     <div class="flex items-center gap-2 mt-1 text-[10px] text-gray-500">
@@ -579,7 +583,7 @@ const App = {
                                                     </div>
                                                 </div>
                                                 <div class="flex items-center shrink-0">
-                                                    <button onclick="App.removeTaskFromDraft('${slot.slotId}', '${t.id}')" class="p-2 text-gray-500 hover:text-red-500 rounded-lg transition-colors" title="Supprimer">
+                                                    <button onclick="event.stopPropagation(); App.removeTaskFromDraft('${slot.slotId}', '${t.id}')" class="p-2 text-gray-500 hover:text-red-500 rounded-lg transition-colors" title="Supprimer">
                                                         <i data-lucide="x" class="w-4 h-4"></i>
                                                     </button>
                                                 </div>
@@ -654,7 +658,15 @@ const App = {
                 </div>
             </section>
             ${sortedAvailabilities.length > 0 ? `
-                <button onclick="App.generateSchedule()" class="w-full py-5 rounded-2xl bg-cyan-500 text-black font-black text-lg uppercase transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)] mt-6 sticky bottom-4">
+                <div class="mt-6 bg-[#1A1D24] p-4 rounded-xl border border-gray-800">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-xs font-bold text-gray-400 uppercase">Taux de remplissage</span>
+                        <span class="text-xs font-bold text-cyan-400">${AppState.bufferPercent}%</span>
+                    </div>
+                    <input type="range" min="50" max="100" value="${AppState.bufferPercent}" onchange="App.setBufferPercent(this.value)" class="w-full accent-cyan-500">
+                    <p class="text-[9px] text-gray-500 mt-1">Marge pour les imprévus. Moins de 100% laisse du temps libre.</p>
+                </div>
+                <button onclick="App.generateSchedule()" class="w-full py-5 rounded-2xl bg-cyan-500 text-black font-black text-lg uppercase transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)] mt-4 sticky bottom-4">
                     Générer ma semaine
                 </button>
             ` : ''}
@@ -791,7 +803,7 @@ const App = {
 
     renderSettings() {
         const renderList = (type, placeholder, isNumber) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Lieux' : '<i data-lucide="tag" class="text-indigo-400 w-4 h-4"></i> Catégories'}</h3><div class="flex gap-2 mb-4"><input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}', ${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
-        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage', false)}${renderList('categories', 'Ex: Famille', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.2.2 (Planning Avancé)</span></div></div>`;
+        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage', false)}${renderList('categories', 'Ex: Famille', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.2.3 (UI & Options)</span></div></div>`;
     },
     
     // ==========================================
