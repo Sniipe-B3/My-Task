@@ -12,13 +12,43 @@ const INITIAL_TASKS = [
         { id: 's1', name: 'Découper planches', duration: 30, locations: ['Jardin'], priority: 'Haute', status: 'todo', note: '' },
         { id: 's2', name: 'Visser', duration: 45, locations: ['Jardin'], priority: 'Basse', status: 'todo', note: '' }
     ]},
-    { id: 't3', projectId: 'p2', name: 'Prendre rdv garage', duration: 15, locations: ['Ordi', 'Maison'], priority: 'Haute', status: 'todo', subtasks: [], note: '' }
+    { id: 't3', projectId: 'p2', name: 'Prendre rdv garage', duration: 15, locations: ['Ordi', 'Maison'], priority: 'Urgence', status: 'todo', subtasks: [], note: '' }
 ];
 
-const migrateProjects = (projects) => projects.map(p => ({ ...p, category: p.category || '' }));
+// Migration des anciennes catégories texte vers des objets Dossiers
+let savedSettings = JSON.parse(localStorage.getItem('osdevie_settings')) || {
+    times: [15, 30, 60, 120], locations: ['Maison', 'Boulot', 'Ordi', 'Jardin']
+};
+let savedCats = JSON.parse(localStorage.getItem('osdevie_categories'));
+
+if (!savedCats) {
+    if (savedSettings.categories) {
+        if (typeof savedSettings.categories[0] === 'string') {
+            savedCats = savedSettings.categories.map((c, i) => ({ id: 'c_' + i + Date.now(), name: c, note: '' }));
+        } else {
+            savedCats = savedSettings.categories; 
+        }
+        delete savedSettings.categories;
+        localStorage.setItem('osdevie_settings', JSON.stringify(savedSettings));
+    } else {
+        savedCats = [{ id: 'c1', name: 'Business', note: '' }, { id: 'c2', name: 'Famille', note: '' }];
+    }
+}
+
+// Migration des projets pour utiliser categoryId au lieu de Category String
+const migrateProjects = (projects, cats) => projects.map(p => {
+    let catId = p.categoryId || null;
+    if (!catId && p.category) {
+        let found = cats.find(c => c.name === p.category);
+        if (found) catId = found.id;
+        delete p.category; 
+    }
+    return { ...p, categoryId: catId };
+});
+
 const migrateTasks = (tasks) => tasks.map(t => ({ 
-    ...t, locations: t.locations || [], note: t.note || '',
-    subtasks: (t.subtasks || []).map(s => ({ ...s, locations: s.locations || [], note: s.note || '' }))
+    ...t, locations: t.locations || [], note: t.note || '', priority: t.priority || 'Moyenne',
+    subtasks: (t.subtasks || []).map(s => ({ ...s, locations: s.locations || [], note: s.note || '', priority: s.priority || 'Moyenne' }))
 }));
 
 // ==========================================
@@ -26,12 +56,9 @@ const migrateTasks = (tasks) => tasks.map(t => ({
 // ==========================================
 const AppState = {
     activeTab: 'planning',
-    settings: JSON.parse(localStorage.getItem('osdevie_settings')) || {
-        times: [15, 30, 60, 120],
-        locations: ['Maison', 'Boulot', 'Ordi', 'Jardin'],
-        categories: ['Business', 'Famille']
-    },
-    projects: migrateProjects(JSON.parse(localStorage.getItem('osdevie_projects')) || INITIAL_PROJECTS),
+    settings: savedSettings,
+    categories: savedCats,
+    projects: migrateProjects(JSON.parse(localStorage.getItem('osdevie_projects')) || INITIAL_PROJECTS, savedCats),
     tasks: migrateTasks(JSON.parse(localStorage.getItem('osdevie_tasks')) || INITIAL_TASKS),
     availabilities: JSON.parse(localStorage.getItem('osdevie_availabilities')) || [],
     draftSchedule: JSON.parse(localStorage.getItem('osdevie_draftSchedule')) || null,
@@ -42,7 +69,11 @@ const AppState = {
     isEditingSchedule: false, 
     
     homeTime: 30, homeLocations: [], homeSuggestions: [], homeSearched: false,
-    expandedProjectId: null, showAddProject: false,
+    
+    expandedCategoryIds: [], // NOUVEAU: Pour gérer l'ouverture des dossiers
+    expandedProjectId: null, 
+    showAddProject: false, showAddCategory: false,
+    
     bankFilter: 'all', bankPriorityFilter: 'all',
     showProjectAddTaskModal: null, showProjectAddSubtaskModal: null,
     activeMenu: null, deletePrompt: null, editPrompt: null, notePrompt: null
@@ -54,8 +85,8 @@ const AppState = {
 const App = {
     lastTapTime: 0,
     
-    // --- SAUVEGARDE ET NAVIGATION ---
     save() {
+        localStorage.setItem('osdevie_categories', JSON.stringify(AppState.categories));
         localStorage.setItem('osdevie_projects', JSON.stringify(AppState.projects));
         localStorage.setItem('osdevie_tasks', JSON.stringify(AppState.tasks));
         localStorage.setItem('osdevie_settings', JSON.stringify(AppState.settings));
@@ -68,7 +99,7 @@ const App = {
     
     setTab(tab) { AppState.activeTab = tab; this.render(); },
 
-    // --- GESTION DES PARAMÈTRES ---
+    // --- GESTION DES PARAMÈTRES ET DOSSIERS ---
     addSetting(type, inputId) {
         const input = document.getElementById(inputId);
         let val = input.value.trim();
@@ -91,6 +122,23 @@ const App = {
 
     setBufferPercent(val) { AppState.bufferPercent = parseInt(val); this.save(); },
 
+    addCategory() {
+        const name = document.getElementById('new-cat-name').value;
+        if (!name.trim()) return;
+        AppState.categories.push({ id: 'c_' + Date.now(), name, note: '' });
+        AppState.showAddCategory = false;
+        this.save();
+    },
+
+    toggleCategoryExpand(id) {
+        if (AppState.expandedCategoryIds.includes(id)) {
+            AppState.expandedCategoryIds = AppState.expandedCategoryIds.filter(cId => cId !== id);
+        } else {
+            AppState.expandedCategoryIds.push(id);
+        }
+        this.render();
+    },
+
     // --- MENUS MODAUX & FORMULAIRES ---
     openMenu(e, type, id, parentId = null) { if (e) { e.preventDefault(); e.stopPropagation(); } AppState.activeMenu = { type, id, parentId }; this.render(); },
     closeMenu() { AppState.activeMenu = null; this.render(); },
@@ -98,9 +146,10 @@ const App = {
     openEdit() {
         const { type, id, parentId } = AppState.activeMenu;
         let itemData = {};
-        if (type === 'project') itemData = AppState.projects.find(p => p.id === id);
-        if (type === 'task') itemData = AppState.tasks.find(t => t.id === id);
-        if (type === 'subtask') itemData = AppState.tasks.find(t => t.id === parentId).subtasks.find(s => s.id === id);
+        if (type === 'category') itemData = AppState.categories.find(c => c.id === id);
+        else if (type === 'project') itemData = AppState.projects.find(p => p.id === id);
+        else if (type === 'task') itemData = AppState.tasks.find(t => t.id === id);
+        else if (type === 'subtask') itemData = AppState.tasks.find(t => t.id === parentId).subtasks.find(s => s.id === id);
         AppState.editPrompt = { type, id, parentId, data: JSON.parse(JSON.stringify(itemData)) };
         AppState.activeMenu = null; this.render();
     },
@@ -108,9 +157,10 @@ const App = {
     
     openNote(type, id, parentId = null) {
         let itemData = {};
-        if (type === 'project') itemData = AppState.projects.find(p => p.id === id);
-        if (type === 'task') itemData = AppState.tasks.find(t => t.id === id);
-        if (type === 'subtask') itemData = AppState.tasks.find(t => t.id === parentId).subtasks.find(s => s.id === id);
+        if (type === 'category') itemData = AppState.categories.find(c => c.id === id);
+        else if (type === 'project') itemData = AppState.projects.find(p => p.id === id);
+        else if (type === 'task') itemData = AppState.tasks.find(t => t.id === id);
+        else if (type === 'subtask') itemData = AppState.tasks.find(t => t.id === parentId).subtasks.find(s => s.id === id);
         AppState.notePrompt = { type, id, parentId, note: itemData.note || '' };
         AppState.activeMenu = null; this.render();
     },
@@ -120,7 +170,8 @@ const App = {
         event.preventDefault();
         const { type, id, parentId } = AppState.notePrompt;
         const noteText = document.getElementById('edit-note-text').value;
-        if (type === 'project') AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, note: noteText } : p);
+        if (type === 'category') AppState.categories = AppState.categories.map(c => c.id === id ? { ...c, note: noteText } : c);
+        else if (type === 'project') AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, note: noteText } : p);
         else if (type === 'task') AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, note: noteText } : t);
         else if (type === 'subtask') AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, note: noteText } : s) } : t);
         AppState.notePrompt = null; this.save();
@@ -129,8 +180,10 @@ const App = {
     saveEdit(event) {
         event.preventDefault(); const form = event.target; const { type, id, parentId } = AppState.editPrompt;
         const name = document.getElementById('edit-name').value;
-        if (type === 'project') {
-            AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, name, category: document.getElementById('edit-proj-category').value } : p);
+        if (type === 'category') {
+            AppState.categories = AppState.categories.map(c => c.id === id ? { ...c, name } : c);
+        } else if (type === 'project') {
+            AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, name, categoryId: document.getElementById('edit-proj-category').value || null } : p);
         } else if (type === 'task') {
             const priorityBtn = form.querySelector('.edit-priority-selected');
             AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId: document.getElementById('edit-project').value || null, duration: parseInt(document.getElementById('edit-duration').value), locations: this.getFormLocations(form), priority: priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne' } : t);
@@ -152,31 +205,43 @@ const App = {
     },
     getFormLocations(form) { return Array.from(form.querySelectorAll('.loc-selected')).map(b => b.getAttribute('data-loc')); },
 
-    selectEditPriority(btn) {
-        btn.parentElement.querySelectorAll('button').forEach(b => { b.classList.remove('edit-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50'); b.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent'); });
-        btn.classList.add('edit-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50'); btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
+    applyPriorityStyle(btn) {
+        btn.parentElement.querySelectorAll('button').forEach(b => { 
+            b.className = "flex-1 py-2 rounded-xl text-xs font-bold bg-[#0D0F12] text-gray-500 border border-transparent transition-colors";
+        });
+        const p = btn.innerText.trim();
+        let colors = p === 'Urgence' ? 'bg-red-500/20 text-red-400 border-red-500/50' : 
+                     p === 'Haute' ? 'bg-purple-500/20 text-purple-400 border-purple-500/50' : 
+                     p === 'Moyenne' ? 'bg-amber-500/20 text-amber-400 border-amber-500/50' : 
+                     'bg-blue-500/20 text-blue-400 border-blue-500/50';
+        
+        btn.className = `flex-1 py-2 rounded-xl text-xs font-bold border transition-colors edit-priority-selected ${colors} ${btn.classList.contains('priority-btn-selected') ? 'priority-btn-selected' : ''} ${btn.classList.contains('edit-sub-priority-selected') ? 'edit-sub-priority-selected' : ''}`;
     },
-    selectSubEditPriority(btn) {
-        btn.parentElement.querySelectorAll('button').forEach(b => { b.classList.remove('edit-sub-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50'); b.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent'); });
-        btn.classList.add('edit-sub-priority-selected', 'bg-purple-500/20', 'text-purple-400', 'border-purple-500/50'); btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
-    },
-    selectBankPriority(btn){ 
-        btn.parentElement.querySelectorAll('button').forEach(b=>{b.classList.remove('priority-btn-selected','bg-purple-500/20','text-purple-400','border-purple-500/50');b.classList.add('bg-[#0D0F12]','text-gray-500','border-transparent');}); 
-        btn.classList.add('priority-btn-selected','bg-purple-500/20','text-purple-400','border-purple-500/50'); btn.classList.remove('bg-[#0D0F12]','text-gray-500','border-transparent'); 
-    },
+
+    selectBankPriority(btn){ this.applyPriorityStyle(btn); btn.classList.add('priority-btn-selected'); },
+    selectEditPriority(btn) { this.applyPriorityStyle(btn); btn.classList.add('edit-priority-selected'); },
+    selectSubEditPriority(btn) { this.applyPriorityStyle(btn); btn.classList.add('edit-sub-priority-selected'); },
 
     // --- SUPPRESSION ---
     openDelete() { AppState.deletePrompt = { ...AppState.activeMenu }; AppState.activeMenu = null; this.render(); },
     cancelDelete() { AppState.deletePrompt = null; this.render(); },
     confirmDelete() {
         const { type, id, parentId } = AppState.deletePrompt;
-        if (type === 'project') { AppState.projects = AppState.projects.filter(p => p.id !== id); AppState.tasks = AppState.tasks.filter(t => t.projectId !== id); }
-        else if (type === 'task') { AppState.tasks = AppState.tasks.filter(t => t.id !== id); }
-        else if (type === 'subtask') { AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.filter(s => s.id !== id) } : t); }
+        if (type === 'category') {
+            AppState.categories = AppState.categories.filter(c => c.id !== id);
+            AppState.projects.forEach(p => { if (p.categoryId === id) p.categoryId = null; });
+        } else if (type === 'project') { 
+            AppState.projects = AppState.projects.filter(p => p.id !== id); 
+            AppState.tasks = AppState.tasks.filter(t => t.projectId !== id); 
+        } else if (type === 'task') { 
+            AppState.tasks = AppState.tasks.filter(t => t.id !== id); 
+        } else if (type === 'subtask') { 
+            AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.filter(s => s.id !== id) } : t); 
+        }
         AppState.deletePrompt = null; this.save();
     },
     
-    // --- ACTIONS TÂCHES ---
+    // --- ACTIONS TÂCHES ET PROJETS ---
     toggleTask(taskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,status:t.status==='todo'?'done':'todo'} : t); if(AppState.homeSearched) this.generateAction(); this.save(); },
     toggleSubtask(taskId,subtaskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,subtasks:t.subtasks.map(s=>s.id===subtaskId ? {...s,status:s.status==='todo'?'done':'todo'} : s)} : t); this.save(); },
     
@@ -199,7 +264,7 @@ const App = {
     },
     addProject(){
         const name=document.getElementById('new-proj-name').value; if(!name.trim()) return;
-        AppState.projects.push({id:Date.now().toString(), name, category:document.getElementById('new-proj-category').value, note:''});
+        AppState.projects.push({id:Date.now().toString(), name, categoryId:document.getElementById('new-proj-category').value || null, note:''});
         AppState.showAddProject=false; this.save();
     },
 
@@ -210,19 +275,41 @@ const App = {
         if (now - this.lastTapTime < 300) this.goToProject(projectId);
         this.lastTapTime = now;
     },
-    goToProject(projectId) { AppState.expandedProjectId = projectId; this.setTab('projects'); },
+    goToProject(projectId) { 
+        AppState.expandedProjectId = projectId;
+        const proj = AppState.projects.find(p => p.id === projectId);
+        if (proj && proj.categoryId && !AppState.expandedCategoryIds.includes(proj.categoryId)) {
+            AppState.expandedCategoryIds.push(proj.categoryId);
+        }
+        this.setTab('projects'); 
+    },
     toggleProjectExpand(id) { AppState.expandedProjectId = AppState.expandedProjectId === id ? null : id; this.render(); },
     toggleAddProject() { AppState.showAddProject = !AppState.showAddProject; this.render(); },
+    toggleAddCategory() { AppState.showAddCategory = !AppState.showAddCategory; this.render(); },
     setBankFilter(filter) { AppState.bankFilter = filter; this.render(); },
     setBankPriorityFilter(priority) { AppState.bankPriorityFilter = priority; this.render(); },
     setHomeTime(time) { AppState.homeTime=time; this.render(); },
     toggleHomeLocation(loc) { AppState.homeLocations.includes(loc) ? AppState.homeLocations = AppState.homeLocations.filter(l => l !== loc) : AppState.homeLocations.push(loc); this.render(); },
 
-    // --- DRAG & DROP GÉNÉRAL (Banque/Projets) ---
+    // --- DRAG & DROP GÉNÉRAL (Projets, Tâches) ---
     handleDragStart(e, id, type, parentId = null) { e.dataTransfer.setData('text/plain', JSON.stringify({id, type, parentId})); e.currentTarget.classList.add('dragging'); },
     handleDragEnd(e) { e.currentTarget.classList.remove('dragging'); document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over')); },
     handleDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); },
     handleDragLeave(e) { e.currentTarget.classList.remove('drag-over'); },
+    
+    handleCategoryDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('border-indigo-500'); },
+    handleCategoryDragLeave(e) { e.currentTarget.classList.remove('border-indigo-500'); },
+    handleCategoryDrop(e, catId) {
+        e.preventDefault(); e.currentTarget.classList.remove('border-indigo-500');
+        try {
+            const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+            if (data.type === 'project') {
+                AppState.projects = AppState.projects.map(p => p.id === data.id ? {...p, categoryId: catId === 'null' ? null : catId} : p);
+                this.save();
+            }
+        } catch(err) { console.error(err); }
+    },
+
     handleDrop(e, targetId, type, parentId = null) {
         e.preventDefault(); e.currentTarget.classList.remove('drag-over');
         try {
@@ -247,7 +334,6 @@ const App = {
     handleDraftDragStart(e, taskId, slotId) { e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'draft-task', sourceSlot: slotId})); e.currentTarget.classList.add('opacity-50'); },
     handleDraftDragEnd(e) { e.currentTarget.classList.remove('opacity-50'); },
     
-    // Gère le survol du créneau global (si l'on veut ajouter tout à la fin)
     handleSlotDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('border-cyan-500'); },
     handleSlotDragLeave(e) { e.currentTarget.classList.remove('border-cyan-500'); },
     handleSlotDrop(e, targetSlotId, isDraftMode) {
@@ -271,7 +357,6 @@ const App = {
         } catch(err) { console.error(err); }
     },
 
-    // Gère le survol d'une tâche précise (pour insérer avant elle et réorganiser)
     handleTaskDragOver(e) { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.borderTop = "2px solid #06b6d4"; },
     handleTaskDragLeave(e) { e.currentTarget.style.borderTop = ""; },
     handleTaskItemDrop(e, targetSlotId, targetTaskId) {
@@ -320,7 +405,7 @@ const App = {
     },
 
     generateAction() {
-        const priorityWeights={'Haute':3,'Moyenne':2,'Basse':1};
+        const priorityWeights={'Urgence':4, 'Haute':3,'Moyenne':2,'Basse':1};
         let allAvailable = [];
         AppState.tasks.forEach(t => {
             let hasActiveSubtasks = false;
@@ -370,7 +455,7 @@ const App = {
     removeAvailability(id) { AppState.availabilities = AppState.availabilities.filter(a => a.id !== id); this.save(); },
 
     generateSchedule() {
-        const priorityWeights={'Haute':3,'Moyenne':2,'Basse':1};
+        const priorityWeights={'Urgence':4, 'Haute':3,'Moyenne':2,'Basse':1};
         let availableTasks = this.getFlatActiveTasks();
         availableTasks.sort((a,b) => {
             if (a.projectId && a.projectId === b.projectId) {
@@ -473,7 +558,7 @@ const App = {
     renderTask(task, minimal=false, parentId=null, parentName=null){
         const isDone = task.status === 'done'; const isSubtask = parentId !== null; const type = isSubtask ? 'subtask' : 'task';
         const argParent = isSubtask ? `, '${parentId}'` : '';
-        const priorityColors = {'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
+        const priorityColors = {'Urgence':'text-red-400 bg-red-500/10 border-red-500/30', 'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
         const hasLocations = task.locations && task.locations.length > 0;
         let projectName = ''; if (task.projectId) { const proj = AppState.projects.find(p => p.id === task.projectId); if (proj) projectName = proj.name; }
 
@@ -504,7 +589,7 @@ const App = {
 
     renderScheduleTask(task, slotId) {
         const isEditing = AppState.isEditingSchedule;
-        const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
+        const priorityColors={'Urgence':'text-red-400 bg-red-500/10 border-red-500/30', 'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
         return `
         <div onclick="App.handleRowTap('${task.projectId}')" ${isEditing ? `draggable="true" ondragstart="App.handleScheduleDragStart(event, '${task.id}', '${slotId}')" ondragend="App.handleScheduleDragEnd(event)" ondragover="App.handleTaskDragOver(event)" ondragleave="App.handleTaskDragLeave(event)" ondrop="App.handleTaskItemDrop(event, '${slotId}', '${task.id}')" class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-600 cursor-grab"` : `class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-800/50 cursor-pointer"`}>
             <div class="flex-1 min-w-0 pointer-events-none">
@@ -558,7 +643,6 @@ const App = {
                     <h2 class="text-xl font-black text-amber-400 flex items-center gap-2"><i data-lucide="calendar-clock"></i> Brouillon généré</h2>
                     <p class="text-xs text-gray-500 mt-1">Glisse les tâches pour modifier l'ordre, supprime-les ou remplace-les avant de valider.</p>
                 </div>
-                
                 <div class="space-y-4">
                     ${AppState.draftSchedule.map(slot => `
                         <div class="bg-[#1A1D24] rounded-2xl border border-amber-500/30 overflow-hidden relative transition-colors"
@@ -675,7 +759,7 @@ const App = {
     
     renderHome() {
         let allActive = []; 
-        const priorityWeights={'Haute':3,'Moyenne':2,'Basse':1};
+        const priorityWeights={'Urgence':4, 'Haute':3,'Moyenne':2,'Basse':1};
         AppState.tasks.forEach(t => {
             let hasActiveSubtasks = false;
             if (t.subtasks && t.subtasks.length > 0) { t.subtasks.forEach(s => { if (s.status !== 'done') { hasActiveSubtasks = true; allActive.push({...s, isSubtask: true, parentId: t.id, parentName: t.name, projectId: t.projectId}); } }); }
@@ -687,14 +771,15 @@ const App = {
             return (a.duration || 15) - (b.duration || 15);
         }).slice(0, 5);
 
-        const categoryStats = AppState.settings.categories.map(cat => {
-            const catProjects = AppState.projects.filter(p => p.category === cat); const total = catProjects.length; let done = 0;
+        const categoryStats = AppState.categories.map(cat => {
+            const catProjects = AppState.projects.filter(p => p.categoryId === cat.id); 
+            const total = catProjects.length; let done = 0;
             catProjects.forEach(p => {
                 const projectTasks = AppState.tasks.filter(t => t.projectId === p.id); let tTotal = 0, tComp = 0;
                 projectTasks.forEach(t => { tTotal++; if (t.status === 'done') tComp++; if (t.subtasks) { t.subtasks.forEach(s => { tTotal++; if (s.status === 'done') tComp++; }); } });
                 if (tTotal > 0 && tTotal === tComp) done++;
             });
-            return { cat, total, done, percent: total === 0 ? 0 : Math.round((done / total) * 100) };
+            return { cat: cat.name, total, done, percent: total === 0 ? 0 : Math.round((done / total) * 100) };
         });
 
         return `
@@ -715,41 +800,107 @@ const App = {
                 ${AppState.homeSearched?`<div class="mt-6 pt-4 border-t border-gray-800"><h3 class="text-xs font-bold text-gray-500 mb-3 uppercase">Résultats (${AppState.homeSuggestions.length})</h3>${AppState.homeSuggestions.length>0?`<div class="space-y-2">${AppState.homeSuggestions.map(t=>this.renderTask(t, false, t.isSubtask ? t.parentId : null, t.isSubtask ? t.parentName : null)).join('')}</div>`:`<p class="text-sm text-gray-500 text-center py-4">Aucune tâche ne correspond.</p>`}</div>`:''}
             </section>
             
-            <section><h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2"><i data-lucide="alert-circle" class="text-emerald-400 w-4 h-4"></i> Priorités & Rapides</h2><div class="space-y-2">${urgencies.length>0?urgencies.map(t=>this.renderTask(t, false, t.isSubtask ? t.parentId : null, t.isSubtask ? t.parentName : null)).join(''):`<div class="bg-[#1A1D24] rounded-2xl p-6 text-center border border-gray-800 border-dashed"><p class="text-gray-500 text-sm">Tout est sous contrôle.</p></div>`}</div></section>
-            <section class="mt-8 pb-4"><h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2"><i data-lucide="bar-chart-2" class="text-indigo-400 w-4 h-4"></i> Progression des Projets</h2><div class="space-y-3">${categoryStats.map(stat => `<div class="bg-[#1A1D24] rounded-2xl p-4 border border-gray-800"><div class="flex justify-between items-end mb-2"><span class="font-bold text-gray-200">${stat.cat}</span><span class="text-xs font-semibold text-gray-500">${stat.done}/${stat.total} (${stat.percent}%)</span></div><div class="h-2 w-full bg-[#0D0F12] rounded-full overflow-hidden border border-gray-800/50"><div class="h-full bg-indigo-500 rounded-full transition-all duration-1000" style="width: ${stat.percent}%"></div></div></div>`).join('')}</div></section>
+            <section><h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2"><i data-lucide="alert-circle" class="text-red-400 w-4 h-4"></i> Priorités & Rapides</h2><div class="space-y-2">${urgencies.length>0?urgencies.map(t=>this.renderTask(t, false, t.isSubtask ? t.parentId : null, t.isSubtask ? t.parentName : null)).join(''):`<div class="bg-[#1A1D24] rounded-2xl p-6 text-center border border-gray-800 border-dashed"><p class="text-gray-500 text-sm">Tout est sous contrôle.</p></div>`}</div></section>
+            
+            ${categoryStats.length > 0 ? `
+            <section class="mt-8 pb-4"><h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2"><i data-lucide="bar-chart-2" class="text-indigo-400 w-4 h-4"></i> Progression des Dossiers</h2><div class="space-y-3">${categoryStats.map(stat => `<div class="bg-[#1A1D24] rounded-2xl p-4 border border-gray-800"><div class="flex justify-between items-end mb-2"><span class="font-bold text-gray-200">${stat.cat}</span><span class="text-xs font-semibold text-gray-500">${stat.done}/${stat.total} (${stat.percent}%)</span></div><div class="h-2 w-full bg-[#0D0F12] rounded-full overflow-hidden border border-gray-800/50"><div class="h-full bg-indigo-500 rounded-full transition-all duration-1000" style="width: ${stat.percent}%"></div></div></div>`).join('')}</div></section>
+            ` : ''}
+        </div>`;
+    },
+
+    renderProjectItem(project) {
+        const projectTasks = AppState.tasks.filter(t => t.projectId === project.id);
+        let total=0, comp=0; 
+        projectTasks.forEach(t=>{ total++; if(t.status==='done')comp++; if(t.subtasks){t.subtasks.forEach(s=>{total++;if(s.status==='done')comp++})} });
+        const prog=total===0?0:Math.round((comp/total)*100); 
+        const exp = AppState.expandedProjectId === project.id;
+        const priorityColors={'Urgence':'text-red-400 bg-red-500/10 border-red-500/30', 'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
+        
+        return `
+        <div draggable="true" ondragstart="App.handleDragStart(event, '${project.id}', 'project')" class="bg-[#13161c] rounded-2xl border border-gray-800 overflow-hidden mb-3 draggable-item">
+            <div onclick="App.toggleProjectExpand('${project.id}')" class="p-4 cursor-pointer hover:bg-[#1A1D24] transition-colors">
+                <div class="flex justify-between items-start mb-2">
+                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                        <div class="p-1.5 rounded-lg ${prog===100?'bg-emerald-500/20 text-emerald-400':'bg-cyan-500/20 text-cyan-400'} shrink-0"><i data-lucide="target" class="w-4 h-4"></i></div>
+                        <div class="flex-1 min-w-0 flex items-center flex-wrap gap-y-1">
+                            <h3 class="font-bold text-sm truncate ${prog===100?'text-gray-400 line-through':'text-white'}">${project.name}</h3>
+                            ${project.note ? `<span onclick="App.openNote('project', '${project.id}'); event.stopPropagation();" class="text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 p-1 rounded-md border border-amber-500/30 ml-2 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0 ml-2">
+                        <button onclick="App.openMenu(event, 'project', '${project.id}')" class="p-1 text-gray-500 hover:text-cyan-400 rounded-lg"><i data-lucide="more-vertical" class="w-4 h-4"></i></button>
+                        <i data-lucide="${exp?'chevron-down':'chevron-right'}" class="text-gray-500 w-4 h-4 ml-1"></i>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3"><div class="h-1.5 w-full bg-[#0D0F12] rounded-full overflow-hidden border border-gray-800/50"><div class="h-full rounded-full transition-all duration-1000 ${prog===100?'bg-emerald-400':'bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.5)]'}" style="width:${prog}%"></div></div><span class="text-[10px] font-bold text-gray-500 w-8 text-right">${prog}%</span></div>
+            </div>
+            ${exp?`<div class="px-4 pb-4 border-t border-gray-800/50 pt-3 bg-[#0D0F12]" onclick="event.stopPropagation()">
+                <div class="flex justify-between items-center mb-3"><span class="text-[10px] font-bold text-gray-500 uppercase">Tâches</span><button onclick="AppState.showProjectAddTaskModal = '${project.id}'; App.render();" class="flex items-center gap-1 text-[10px] text-cyan-400 bg-cyan-500/10 px-2 py-1 rounded-lg border border-cyan-500/30"><i data-lucide="plus" class="w-3 h-3"></i> Tâche</button></div>
+                ${AppState.showProjectAddTaskModal === project.id ? `<div class="mb-3 flex gap-2 bg-[#1A1D24] p-2 rounded-xl border border-gray-800"><input type="text" id="project-quick-task-${project.id}" onkeydown="if(event.key==='Enter') App.addProjectTask('${project.id}')" placeholder="Nouvelle tâche..." class="flex-1 bg-transparent px-2 text-xs text-white focus:outline-none" autofocus><button type="button" onclick="App.addProjectTask('${project.id}')" class="bg-cyan-500 text-black px-2 py-1 rounded-lg text-xs font-bold">OK</button></div>`:''}
+                ${projectTasks.length===0?'<p class="text-xs text-gray-600 text-center py-2">Aucune tâche.</p>':projectTasks.map(task=>`<div class="space-y-2 mb-2">${this.renderTask(task,true)}
+                    ${AppState.showProjectAddSubtaskModal === task.id ? `<div class="ml-6 mb-2 flex gap-2 bg-[#1A1D24] p-2 rounded-xl border border-gray-800"><input type="text" id="task-quick-subtask-${task.id}" onkeydown="if(event.key==='Enter') App.addSubtask('${task.id}')" placeholder="Nouvelle sous-tâche..." class="flex-1 bg-transparent px-2 text-xs text-white focus:outline-none" autofocus><button type="button" onclick="App.addSubtask('${task.id}')" class="bg-cyan-500 text-black px-2 py-1 rounded-lg text-xs font-bold">OK</button></div>`:''}
+                    ${task.subtasks&&task.subtasks.length>0?`<div class="ml-6 space-y-1.5 border-l border-gray-800 pl-3">${task.subtasks.map(sub=>`<div draggable="true" onclick="App.handleRowTap('${task.projectId}')" ondragstart="App.handleDragStart(event, '${sub.id}', 'subtask', '${task.id}')" ondragend="App.handleDragEnd(event)" ondragover="App.handleDragOver(event)" ondragleave="App.handleDragLeave(event)" ondrop="App.handleDrop(event, '${sub.id}', 'subtask', '${task.id}')" class="draggable-item flex items-center justify-between py-1.5 px-2 rounded-lg bg-[#1A1D24] border border-gray-800/40 hover:bg-[#1f232b] transition-colors"><div class="flex items-center gap-2 flex-1 min-w-0"><button onclick="App.toggleSubtask('${task.id}','${sub.id}'); event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer"><i data-lucide="${sub.status==='done'?'check-circle-2':'circle'}" class="${sub.status==='done'?'text-emerald-500':'text-gray-600'} w-3 h-3"></i></button><div class="flex-1 min-w-0"><span class="text-xs truncate block ${sub.status==='done'?'text-gray-600 line-through':'text-gray-300'}">${sub.name}</span><div class="flex items-center gap-2 mt-0.5 text-[9px] text-gray-500 flex-wrap"><span><i data-lucide="clock" class="w-2 h-2 inline"></i> ${sub.duration || 15}m</span>${sub.locations && sub.locations.length > 0 ? `<span><i data-lucide="map-pin" class="w-2 h-2 inline text-emerald-400"></i> ${sub.locations.join(', ')}</span>` : ''}<span class="px-1 py-0.5 rounded text-[8px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>${sub.note ? `<span onclick="App.openNote('subtask', '${sub.id}', '${task.id}'); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"><i data-lucide="file-text" class="w-2.5 h-2.5"></i></span>` : ''}</div></div></div><button onclick="App.openMenu(event, 'subtask', '${sub.id}', '${task.id}')" class="p-1 text-gray-500 hover:text-cyan-400 shrink-0 ml-1 rounded-md"><i data-lucide="more-vertical" class="w-3 h-3"></i></button></div>`).join('')}</div>`:''}
+                </div>`).join('')}
+            </div>`:''}
         </div>`;
     },
     
     renderProjects() {
-        let html=`<div class="space-y-4"><div class="flex justify-between items-center mb-6 px-1"><h2 class="text-xl font-black text-white">Grands Chantiers</h2><button onclick="App.toggleAddProject()" class="h-8 w-8 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center border border-cyan-500/30"><i data-lucide="plus" class="w-4 h-4"></i></button></div>`;
-        if(AppState.showAddProject)html+=`<div class="bg-[#1A1D24] p-4 rounded-2xl border border-cyan-500/30 mb-4 flex flex-col gap-3"><input type="text" id="new-proj-name" placeholder="Nom du projet..." class="w-full bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><div class="flex gap-2"><select id="new-proj-category" class="flex-1 bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-gray-300 border border-gray-800 focus:outline-none"><option value="">Catégorie : Aucune</option>${AppState.settings.categories.map(c=>`<option value="${c}">${c}</option>`).join('')}</select><button onclick="App.addProject()" class="bg-cyan-500 text-black px-4 py-2 rounded-lg text-sm font-bold">OK</button></div></div>`;
-        html+=AppState.projects.map(project=>{
-            const projectTasks=AppState.tasks.filter(t=>t.projectId===project.id);
-            let total=0,comp=0; projectTasks.forEach(t=>{ total++;if(t.status==='done')comp++; if(t.subtasks){t.subtasks.forEach(s=>{total++;if(s.status==='done')comp++})} });
-            const prog=total===0?0:Math.round((comp/total)*100); const exp=AppState.expandedProjectId===project.id;
-            const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
-            return `
-            <div class="bg-[#1A1D24] rounded-2xl border border-gray-800 overflow-hidden">
-                <div onclick="App.toggleProjectExpand('${project.id}')" class="p-5 cursor-pointer hover:bg-[#1f232b] transition-colors">
-                    <div class="flex justify-between items-start mb-3">
-                        <div class="flex items-center gap-3 flex-1 min-w-0">
-                            <div class="p-2 rounded-xl ${prog===100?'bg-emerald-500/20 text-emerald-400':'bg-cyan-500/20 text-cyan-400'} shrink-0"><i data-lucide="folder" class="w-5 h-5 fill-current opacity-50"></i></div>
-                            <div class="flex-1 min-w-0 flex items-center flex-wrap gap-y-1"><h3 class="font-bold text-lg truncate ${prog===100?'text-gray-400 line-through':'text-white'}">${project.name}</h3>${project.category ? `<span class="px-2 py-0.5 rounded text-[10px] border border-gray-700 bg-gray-800 text-gray-300 ml-2">${project.category}</span>` : ''}${project.note ? `<span onclick="App.openNote('project', '${project.id}'); event.stopPropagation();" class="text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 p-1 rounded-md border border-amber-500/30 ml-2 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}</div>
-                        </div>
-                        <div class="flex items-center gap-1 shrink-0 ml-2"><button onclick="App.openMenu(event, 'project', '${project.id}')" class="p-1.5 text-gray-500 hover:text-cyan-400 rounded-lg"><i data-lucide="more-vertical" class="w-5 h-5"></i></button><i data-lucide="${exp?'chevron-down':'chevron-right'}" class="text-gray-500 w-5 h-5 ml-1"></i></div>
-                    </div>
-                    <div class="mt-4 flex items-center gap-3"><div class="h-2 w-full bg-[#0D0F12] rounded-full overflow-hidden border border-gray-800/50"><div class="h-full rounded-full transition-all duration-1000 ${prog===100?'bg-emerald-400':'bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.5)]'}" style="width:${prog}%"></div></div><span class="text-xs font-bold text-gray-400 w-8 text-right">${prog}%</span></div>
+        let html=`<div class="space-y-4">
+            <div class="flex justify-between items-center mb-6 px-1">
+                <h2 class="text-xl font-black text-white">Dossiers & Projets</h2>
+                <div class="flex gap-2">
+                    <button onclick="App.toggleAddCategory()" class="h-8 px-3 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-xs font-bold">+ Dossier</button>
+                    <button onclick="App.toggleAddProject()" class="h-8 px-3 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-bold">+ Projet</button>
                 </div>
-                ${exp?`<div class="px-5 pb-5 border-t border-gray-800/50 pt-4 bg-[#13161c]" onclick="event.stopPropagation()">
-                    <div class="flex justify-between items-center mb-3"><span class="text-xs font-bold text-gray-400 uppercase">Tâches du projet</span><button onclick="AppState.showProjectAddTaskModal = '${project.id}'; App.render();" class="flex items-center gap-1 text-xs text-cyan-400 bg-cyan-500/10 px-2.5 py-1 rounded-lg border border-cyan-500/30"><i data-lucide="plus" class="w-3.5 h-3.5"></i> Ajouter tâche</button></div>
-                    ${AppState.showProjectAddTaskModal === project.id ? `<div class="mb-3 flex gap-2 bg-[#0D0F12] p-2 rounded-xl border border-gray-800"><input type="text" id="project-quick-task-${project.id}" onkeydown="if(event.key==='Enter') App.addProjectTask('${project.id}')" placeholder="Nouvelle tâche..." class="flex-1 bg-transparent px-2 text-sm text-white focus:outline-none" autofocus><button type="button" onclick="App.addProjectTask('${project.id}')" class="bg-cyan-500 text-black px-3 py-1 rounded-lg text-xs font-bold">Ajouter</button></div>`:''}
-                    ${projectTasks.length===0?'<p class="text-sm text-gray-500 text-center py-2">Aucune tâche.</p>':projectTasks.map(task=>`<div class="space-y-2 mb-2">${this.renderTask(task,true)}
-                        ${AppState.showProjectAddSubtaskModal === task.id ? `<div class="ml-8 mb-2 flex gap-2 bg-[#0D0F12] p-2 rounded-xl border border-gray-800"><input type="text" id="task-quick-subtask-${task.id}" onkeydown="if(event.key==='Enter') App.addSubtask('${task.id}')" placeholder="Nouvelle sous-tâche..." class="flex-1 bg-transparent px-2 text-sm text-white focus:outline-none" autofocus><button type="button" onclick="App.addSubtask('${task.id}')" class="bg-cyan-500 text-black px-3 py-1 rounded-lg text-xs font-bold">OK</button></div>`:''}
-                        ${task.subtasks&&task.subtasks.length>0?`<div class="ml-8 space-y-1.5 border-l border-gray-800 pl-3">${task.subtasks.map(sub=>`<div draggable="true" onclick="App.handleRowTap('${task.projectId}')" ondragstart="App.handleDragStart(event, '${sub.id}', 'subtask', '${task.id}')" ondragend="App.handleDragEnd(event)" ondragover="App.handleDragOver(event)" ondragleave="App.handleDragLeave(event)" ondrop="App.handleDrop(event, '${sub.id}', 'subtask', '${task.id}')" class="draggable-item flex items-center justify-between py-2 px-2.5 rounded-lg bg-[#13161c] border border-gray-800/40 hover:bg-[#1A1D24] transition-colors"><div class="flex items-center gap-2 flex-1 min-w-0"><button onclick="App.toggleSubtask('${task.id}','${sub.id}'); event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer p-1 -ml-1"><i data-lucide="${sub.status==='done'?'check-circle-2':'circle'}" class="${sub.status==='done'?'text-emerald-500':'text-gray-600'} w-3.5 h-3.5"></i></button><div class="flex-1 min-w-0"><span class="text-sm truncate block ${sub.status==='done'?'text-gray-600 line-through':'text-gray-300'}">${sub.name}</span><div class="flex items-center gap-2 mt-0.5 text-[10px] text-gray-500 flex-wrap"><span><i data-lucide="clock" class="w-2.5 h-2.5 inline"></i> ${sub.duration || 15}m</span>${sub.locations && sub.locations.length > 0 ? `<span><i data-lucide="map-pin" class="w-2.5 h-2.5 inline text-emerald-400"></i> ${sub.locations.join(', ')}</span>` : ''}<span class="px-1.5 py-0.2 rounded text-[9px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>${sub.note ? `<span onclick="App.openNote('subtask', '${sub.id}', '${task.id}'); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer"><i data-lucide="file-text" class="w-2.5 h-2.5"></i></span>` : ''}</div></div></div><button onclick="App.openMenu(event, 'subtask', '${sub.id}', '${task.id}')" class="p-1.5 text-gray-500 hover:text-cyan-400 shrink-0 ml-1 rounded-md"><i data-lucide="more-vertical" class="w-4 h-4"></i></button></div>`).join('')}</div>`:''}
-                    </div>`).join('')}
-                </div>`:''}
             </div>`;
-        }).join('');
+            
+        if(AppState.showAddCategory) {
+            html += `<div class="bg-[#1A1D24] p-4 rounded-2xl border border-indigo-500/30 mb-4 flex gap-2"><input type="text" id="new-cat-name" placeholder="Nom du dossier..." class="flex-1 bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addCategory()" class="bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold">OK</button></div>`;
+        }
+        
+        if(AppState.showAddProject) {
+            html += `<div class="bg-[#1A1D24] p-4 rounded-2xl border border-cyan-500/30 mb-4 flex flex-col gap-3"><input type="text" id="new-proj-name" placeholder="Nom du projet..." class="w-full bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><div class="flex gap-2"><select id="new-proj-category" class="flex-1 bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-gray-300 border border-gray-800 focus:outline-none"><option value="">Dossier : Aucun</option>${AppState.categories.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select><button onclick="App.addProject()" class="bg-cyan-500 text-black px-4 py-2 rounded-lg text-sm font-bold">OK</button></div></div>`;
+        }
+
+        // Rendu des dossiers (Catégories)
+        AppState.categories.forEach(cat => {
+            const catProjects = AppState.projects.filter(p => p.categoryId === cat.id);
+            const isCatExpanded = AppState.expandedCategoryIds.includes(cat.id);
+            
+            html += `
+            <div class="bg-[#1A1D24] rounded-2xl border border-gray-800 mb-4 shadow-sm" ondragover="App.handleCategoryDragOver(event)" ondragleave="App.handleCategoryDragLeave(event)" ondrop="App.handleCategoryDrop(event, '${cat.id}')">
+                <div onclick="App.toggleCategoryExpand('${cat.id}')" class="p-4 cursor-pointer hover:bg-[#1f232b] transition-colors rounded-t-2xl ${!isCatExpanded ? 'rounded-b-2xl' : ''}">
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="folder" class="${isCatExpanded ? 'text-indigo-400 fill-indigo-400/20' : 'text-gray-500'} w-5 h-5 transition-colors"></i>
+                            <h3 class="font-bold text-white text-md">${cat.name}</h3>
+                            ${cat.note ? `<span onclick="App.openNote('category', '${cat.id}'); event.stopPropagation();" class="text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 p-1 rounded-md border border-amber-500/30 ml-1 cursor-pointer"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="text-[10px] font-bold text-gray-500 bg-[#0D0F12] px-2 py-0.5 rounded-md mr-1">${catProjects.length}</span>
+                            <button onclick="App.openMenu(event, 'category', '${cat.id}')" class="p-1.5 text-gray-500 hover:text-indigo-400 rounded-lg"><i data-lucide="more-vertical" class="w-4 h-4"></i></button>
+                            <i data-lucide="${isCatExpanded?'chevron-down':'chevron-right'}" class="text-gray-500 w-4 h-4"></i>
+                        </div>
+                    </div>
+                </div>
+                ${isCatExpanded ? `
+                <div class="px-3 pb-3 pt-2 bg-[#1A1D24] border-t border-gray-800/50 rounded-b-2xl" onclick="event.stopPropagation()">
+                    ${catProjects.length === 0 ? '<p class="text-xs text-gray-600 text-center py-4">Dossier vide.</p>' : catProjects.map(p => this.renderProjectItem(p)).join('')}
+                </div>
+                ` : ''}
+            </div>`;
+        });
+
+        // Rendu des projets sans dossier
+        const orphanedProjects = AppState.projects.filter(p => !p.categoryId);
+        if (orphanedProjects.length > 0) {
+            html += `<div class="mt-8 mb-2 px-1 flex items-center gap-2"><div class="h-px bg-gray-800 flex-1"></div><span class="text-xs font-bold text-gray-500 uppercase tracking-widest">Sans Dossier</span><div class="h-px bg-gray-800 flex-1"></div></div>`;
+            html += `<div class="space-y-3" ondragover="App.handleCategoryDragOver(event)" ondragleave="App.handleCategoryDragLeave(event)" ondrop="App.handleCategoryDrop(event, 'null')">`;
+            html += orphanedProjects.map(p => this.renderProjectItem(p)).join('');
+            html += `</div>`;
+        }
+
         return html+'</div>';
     },
     
@@ -770,7 +921,7 @@ const App = {
                 if (task.subtasks && task.subtasks.length > 0) {
                     const activeSubs = task.subtasks.filter(s => { if (AppState.bankFilter === 'done') return s.status === 'done'; if (AppState.bankPriorityFilter !== 'all' && s.priority !== AppState.bankPriorityFilter) return false; return s.status !== 'done'; });
                     if (activeSubs.length > 0) {
-                        const priorityColors={'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
+                        const priorityColors={'Urgence':'text-red-400 bg-red-500/10 border-red-500/30', 'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
                         bankListHtml += `<div class="ml-4 mt-2 space-y-2 border-l-2 border-gray-800/50 pl-3">`;
                         activeSubs.forEach(sub => {
                             const isSubDone = sub.status === 'done';
@@ -788,22 +939,22 @@ const App = {
                 <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2"><i data-lucide="plus" class="text-emerald-400 w-4 h-4"></i> Ajout Rapide</h2>
                 <form onsubmit="App.addTask(event)" class="space-y-4">
                     <input type="text" id="new-task-name" placeholder="Que faut-il faire ?" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800">
-                    <div class="flex gap-2"><select id="new-task-project" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800"><option value="">Projet : Aucun</option>${AppState.projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select><select id="new-task-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center">${AppState.settings.times.map(t => `<option value="${t}">${t}m</option>`).join('')}</select></div>
+                    <div class="flex gap-2"><select id="new-task-project" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800"><option value="">Dossier : Aucun</option>${AppState.projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select><select id="new-task-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center">${AppState.settings.times.map(t => `<option value="${t}">${t}m</option>`).join('')}</select></div>
                     <div class="flex gap-2 flex-wrap">${AppState.settings.locations.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold bg-[#0D0F12] text-gray-500 border border-transparent" data-loc="${l}">${l}</button>`).join('')}</div>
-                    <div class="flex gap-2">${['Basse','Moyenne','Haute'].map(p=>`<button type="button" onclick="App.selectBankPriority(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${p==='Moyenne'?'priority-btn-selected bg-purple-500/20 text-purple-400 border border-purple-500/50':'bg-[#0D0F12] text-gray-500 border border-transparent'}">Priorité : ${p}</button>`).join('')}</div>
-                    <button type="submit" class="w-full py-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/50 font-bold uppercase hover:bg-emerald-500 hover:text-black">Ajouter</button>
+                    <div class="flex gap-2 flex-wrap">${['Basse','Moyenne','Haute','Urgence'].map(p=>`<button type="button" onclick="App.selectBankPriority(this)" class="flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold transition-colors ${p==='Moyenne'?'priority-btn-selected bg-amber-500/20 text-amber-400 border border-amber-500/50':'bg-[#0D0F12] text-gray-500 border border-transparent'}">${p}</button>`).join('')}</div>
+                    <button type="submit" class="w-full py-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/50 font-bold uppercase hover:bg-emerald-500 hover:text-black transition-colors">Ajouter</button>
                 </form>
             </section>
             <section>
-                <div class="flex flex-col gap-3 mb-4 px-1"><div class="flex justify-between items-end"><h2 class="text-xl font-black text-white">Toutes les tâches</h2><div class="flex gap-1 flex-wrap justify-end"><button onclick="App.setBankFilter('all')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='all'?'bg-gray-700 text-white':'bg-[#1A1D24] text-gray-500'}">Actives</button><button onclick="App.setBankFilter('isolated')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='isolated'?'bg-gray-700 text-white':'bg-[#1A1D24] text-gray-500'}">Isolées</button><button onclick="App.setBankFilter('done')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='done'?'bg-emerald-600 text-white':'bg-[#1A1D24] text-gray-500'}">Effectuée</button></div></div><div class="flex gap-1 items-center overflow-x-auto pb-1"><span class="text-[10px] text-gray-500 uppercase font-bold mr-1">Priorité:</span><button onclick="App.setBankPriorityFilter('all')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='all'?'bg-cyan-500/20 text-cyan-400':'bg-[#1A1D24] text-gray-500'}">Toutes</button><button onclick="App.setBankPriorityFilter('Haute')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Haute'?'bg-purple-500/20 text-purple-400':'bg-[#1A1D24] text-gray-500'}">Haute</button><button onclick="App.setBankPriorityFilter('Moyenne')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Moyenne'?'bg-amber-500/20 text-amber-400':'bg-[#1A1D24] text-gray-500'}">Moyenne</button><button onclick="App.setBankPriorityFilter('Basse')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Basse'?'bg-blue-500/20 text-blue-400':'bg-[#1A1D24] text-gray-500'}">Basse</button></div></div>
+                <div class="flex flex-col gap-3 mb-4 px-1"><div class="flex justify-between items-end"><h2 class="text-xl font-black text-white">Toutes les tâches</h2><div class="flex gap-1 flex-wrap justify-end"><button onclick="App.setBankFilter('all')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='all'?'bg-gray-700 text-white':'bg-[#1A1D24] text-gray-500'}">Actives</button><button onclick="App.setBankFilter('isolated')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='isolated'?'bg-gray-700 text-white':'bg-[#1A1D24] text-gray-500'}">Isolées</button><button onclick="App.setBankFilter('done')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='done'?'bg-emerald-600 text-white':'bg-[#1A1D24] text-gray-500'}">Effectuée</button></div></div><div class="flex gap-1 items-center overflow-x-auto pb-1"><span class="text-[10px] text-gray-500 uppercase font-bold mr-1">Filtre:</span><button onclick="App.setBankPriorityFilter('all')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='all'?'bg-cyan-500/20 text-cyan-400':'bg-[#1A1D24] text-gray-500'}">Toutes</button><button onclick="App.setBankPriorityFilter('Urgence')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Urgence'?'bg-red-500/20 text-red-400':'bg-[#1A1D24] text-gray-500'}">Urgence</button><button onclick="App.setBankPriorityFilter('Haute')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Haute'?'bg-purple-500/20 text-purple-400':'bg-[#1A1D24] text-gray-500'}">Haute</button><button onclick="App.setBankPriorityFilter('Moyenne')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Moyenne'?'bg-amber-500/20 text-amber-400':'bg-[#1A1D24] text-gray-500'}">Moyenne</button><button onclick="App.setBankPriorityFilter('Basse')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Basse'?'bg-blue-500/20 text-blue-400':'bg-[#1A1D24] text-gray-500'}">Basse</button></div></div>
                 <div class="pb-10">${bankListHtml}</div>
             </section>
         </div>`;
     },
 
     renderSettings() {
-        const renderList = (type, placeholder, isNumber) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Lieux' : '<i data-lucide="tag" class="text-indigo-400 w-4 h-4"></i> Catégories'}</h3><div class="flex gap-2 mb-4"><input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}', ${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
-        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage', false)}${renderList('categories', 'Ex: Famille', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.2.4 (Planning par pas de 5%)</span></div></div>`;
+        const renderList = (type, placeholder, isNumber) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Lieux' : ''}</h3><div class="flex gap-2 mb-4"><input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}', ${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
+        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.3.0 (Dossiers & Urgences)</span></div></div>`;
     },
     
     // ==========================================
@@ -825,27 +976,27 @@ const App = {
         }
         
         if (AppState.activeMenu) {
-            modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeMenu()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><div class="p-2 border-b border-gray-800/50"><button onclick="App.openEdit()" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="pencil" class="text-cyan-400 w-5 h-5"></i> Modifier</button><button onclick="App.openNote('${AppState.activeMenu.type}', '${AppState.activeMenu.id}', ${AppState.activeMenu.parentId ? `'${AppState.activeMenu.parentId}'` : 'null'})" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="file-text" class="text-amber-400 w-5 h-5"></i> Gérer la note</button><button onclick="App.openDelete()" class="w-full text-left px-6 py-4 text-red-500 font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="trash-2" class="w-5 h-5"></i> Supprimer</button></div><div class="p-2"><button onclick="App.closeMenu()" class="w-full text-center px-6 py-4 text-gray-500 font-bold hover:bg-[#1f232b] rounded-2xl">Annuler</button></div></div></div>`;
+            modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeMenu()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><div class="p-2 border-b border-gray-800/50"><button onclick="App.openEdit()" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="pencil" class="text-cyan-400 w-5 h-5"></i> Renommer</button><button onclick="App.openNote('${AppState.activeMenu.type}', '${AppState.activeMenu.id}', ${AppState.activeMenu.parentId ? `'${AppState.activeMenu.parentId}'` : 'null'})" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="file-text" class="text-amber-400 w-5 h-5"></i> Gérer la note</button><button onclick="App.openDelete()" class="w-full text-left px-6 py-4 text-red-500 font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="trash-2" class="w-5 h-5"></i> Supprimer</button></div><div class="p-2"><button onclick="App.closeMenu()" class="w-full text-center px-6 py-4 text-gray-500 font-bold hover:bg-[#1f232b] rounded-2xl">Annuler</button></div></div></div>`;
         } else if (AppState.notePrompt) {
             modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeNote()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><h3 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="file-text" class="text-amber-400"></i> Note</h3><form onsubmit="App.saveNote(event)" class="space-y-4"><textarea id="edit-note-text" rows="6" class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-amber-500 focus:outline-none placeholder-gray-600" placeholder="Écris ta note ici...">${AppState.notePrompt.note}</textarea><div class="flex gap-3 mt-4"><button type="button" onclick="App.closeNote()" class="flex-1 py-3 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button><button type="submit" class="flex-1 py-3 rounded-xl bg-amber-500 text-black font-bold">Enregistrer</button></div></form></div></div>`;
         } else if (AppState.editPrompt) {
-            const d = AppState.editPrompt.data; const dLocs = d.locations || []; const dCat = d.category || '';
+            const d = AppState.editPrompt.data; const dLocs = d.locations || []; const dCatId = d.categoryId || '';
             modalContainer.innerHTML = `
                 <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeEdit()">
                     <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
                         <h3 class="text-xl font-bold text-white mb-4">Modifier</h3>
                         <form onsubmit="App.saveEdit(event)" class="space-y-4">
                             <input type="text" id="edit-name" value="${d.name.replace(/"/g, '&quot;')}" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none">
-                            ${AppState.editPrompt.type === 'project' ? `<select id="edit-proj-category" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none"><option value="">Catégorie : Aucune</option>${AppState.settings.categories.map(c => `<option value="${c}" ${c === dCat ? 'selected' : ''}>${c}</option>`).join('')}</select>` : ''}
-                            ${AppState.editPrompt.type === 'task' ? `<div class="flex gap-2"><select id="edit-project" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none"><option value="">Projet : Aucun</option>${AppState.projects.map(p => `<option value="${p.id}" ${p.id === d.projectId ? 'selected' : ''}>${p.name}</option>`).join('')}</select><select id="edit-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">${AppState.settings.times.map(t => `<option value="${t}" ${d.duration == t ? 'selected' : ''}>${t}m</option>`).join('')}</select></div><div class="flex gap-2 flex-wrap">${AppState.settings.locations.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" data-loc="${l}" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold ${dLocs.includes(l) ? 'loc-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${l}</button>`).join('')}</div><div class="flex gap-2">${['Basse','Moyenne','Haute'].map(p => `<button type="button" onclick="App.selectEditPriority(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${p === (d.priority || 'Moyenne') ? 'edit-priority-selected bg-purple-500/20 text-purple-400 border border-purple-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${p}</button>`).join('')}</div>` : ''}
-                            ${AppState.editPrompt.type === 'subtask' ? `<div class="flex gap-2"><select id="edit-sub-duration" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">${AppState.settings.times.map(t => `<option value="${t}" ${(d.duration || 15) == t ? 'selected' : ''}>${t}m</option>`).join('')}</select></div><div class="flex gap-2 flex-wrap">${AppState.settings.locations.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" data-loc="${l}" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold ${dLocs.includes(l) ? 'loc-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${l}</button>`).join('')}</div><div class="flex gap-2">${['Basse','Moyenne','Haute'].map(p => `<button type="button" onclick="App.selectSubEditPriority(this)" class="flex-1 py-2 rounded-xl text-xs font-bold ${p === (d.priority || 'Moyenne') ? 'edit-sub-priority-selected bg-purple-500/20 text-purple-400 border border-purple-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${p}</button>`).join('')}</div>` : ''}
+                            ${AppState.editPrompt.type === 'project' ? `<select id="edit-proj-category" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none"><option value="">Dossier : Aucun</option>${AppState.categories.map(c => `<option value="${c.id}" ${c.id === dCatId ? 'selected' : ''}>${c.name}</option>`).join('')}</select>` : ''}
+                            ${AppState.editPrompt.type === 'task' ? `<div class="flex gap-2"><select id="edit-project" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none"><option value="">Projet : Aucun</option>${AppState.projects.map(p => `<option value="${p.id}" ${p.id === d.projectId ? 'selected' : ''}>${p.name}</option>`).join('')}</select><select id="edit-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">${AppState.settings.times.map(t => `<option value="${t}" ${d.duration == t ? 'selected' : ''}>${t}m</option>`).join('')}</select></div><div class="flex gap-2 flex-wrap">${AppState.settings.locations.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" data-loc="${l}" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold ${dLocs.includes(l) ? 'loc-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${l}</button>`).join('')}</div><div class="flex gap-2 flex-wrap">${['Basse','Moyenne','Haute','Urgence'].map(p => `<button type="button" onclick="App.selectEditPriority(this)" class="flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold transition-colors ${p === (d.priority || 'Moyenne') ? `edit-priority-selected ${p==='Urgence'?'bg-red-500/20 text-red-400 border-red-500/50' : p==='Haute'?'bg-purple-500/20 text-purple-400 border-purple-500/50' : p==='Moyenne'?'bg-amber-500/20 text-amber-400 border-amber-500/50' : 'bg-blue-500/20 text-blue-400 border-blue-500/50'}` : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${p}</button>`).join('')}</div>` : ''}
+                            ${AppState.editPrompt.type === 'subtask' ? `<div class="flex gap-2"><select id="edit-sub-duration" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">${AppState.settings.times.map(t => `<option value="${t}" ${(d.duration || 15) == t ? 'selected' : ''}>${t}m</option>`).join('')}</select></div><div class="flex gap-2 flex-wrap">${AppState.settings.locations.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" data-loc="${l}" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold ${dLocs.includes(l) ? 'loc-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${l}</button>`).join('')}</div><div class="flex gap-2 flex-wrap">${['Basse','Moyenne','Haute','Urgence'].map(p => `<button type="button" onclick="App.selectSubEditPriority(this)" class="flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold transition-colors ${p === (d.priority || 'Moyenne') ? `edit-sub-priority-selected ${p==='Urgence'?'bg-red-500/20 text-red-400 border-red-500/50' : p==='Haute'?'bg-purple-500/20 text-purple-400 border-purple-500/50' : p==='Moyenne'?'bg-amber-500/20 text-amber-400 border-amber-500/50' : 'bg-blue-500/20 text-blue-400 border-blue-500/50'}` : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${p}</button>`).join('')}</div>` : ''}
                             <div class="flex gap-3 mt-6 pt-2"><button type="button" onclick="App.closeEdit()" class="flex-1 py-3 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button><button type="submit" class="flex-1 py-3 rounded-xl bg-cyan-500 text-black font-bold">Enregistrer</button></div>
                         </form>
                     </div>
                 </div>`;
         } else if (AppState.deletePrompt) {
-            let typeName = AppState.deletePrompt.type === 'project' ? 'ce projet' : (AppState.deletePrompt.type === 'task' ? 'cette tâche' : 'cette sous-tâche');
-            modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.cancelDelete()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mb-6"></div><h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2"><i data-lucide="trash-2" class="text-red-500"></i> Supprimer ${typeName} ?</h3><p class="text-gray-400 text-sm mb-8">Cette action est définitive et supprimera tout le contenu associé.</p><div class="flex gap-3"><button onclick="App.cancelDelete()" class="flex-1 py-4 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button><button onclick="App.confirmDelete()" class="flex-1 py-4 rounded-xl bg-red-500/10 text-red-500 font-bold border border-red-500/50">Supprimer</button></div></div></div>`;
+            let typeName = AppState.deletePrompt.type === 'category' ? 'ce dossier (les projets à l\'intérieur iront dans "Sans dossier")' : AppState.deletePrompt.type === 'project' ? 'ce projet' : (AppState.deletePrompt.type === 'task' ? 'cette tâche' : 'cette sous-tâche');
+            modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.cancelDelete()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mb-6"></div><h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2"><i data-lucide="trash-2" class="text-red-500"></i> Supprimer ${typeName} ?</h3><p class="text-gray-400 text-sm mb-8">Cette action est définitive.</p><div class="flex gap-3"><button onclick="App.cancelDelete()" class="flex-1 py-4 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button><button onclick="App.confirmDelete()" class="flex-1 py-4 rounded-xl bg-red-500/10 text-red-500 font-bold border border-red-500/50">Supprimer</button></div></div></div>`;
         } else { 
             modalContainer.innerHTML = ''; 
         }
@@ -853,7 +1004,7 @@ const App = {
         const tabs=[
             {id:'home',color:'text-cyan-400'},
             {id:'planning',color:'text-amber-400'},
-            {id:'projects',color:'text-cyan-400'},
+            {id:'projects',color:'text-indigo-400'}, // Changé en Indigo pour matcher le thème des dossiers
             {id:'bank',color:'text-emerald-400'},
             {id:'settings',color:'text-gray-200'}
         ];
