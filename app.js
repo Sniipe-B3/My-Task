@@ -70,7 +70,7 @@ const AppState = {
     
     homeTime: 30, homeLocations: [], homeSuggestions: [], homeSearched: false,
     
-    expandedCategoryIds: [], // NOUVEAU: Pour gérer l'ouverture des dossiers
+    expandedCategoryIds: [], // Pour gérer l'ouverture des dossiers
     expandedProjectId: null, 
     showAddProject: false, showAddCategory: false,
     
@@ -215,7 +215,7 @@ const App = {
                      p === 'Moyenne' ? 'bg-amber-500/20 text-amber-400 border-amber-500/50' : 
                      'bg-blue-500/20 text-blue-400 border-blue-500/50';
         
-        btn.className = `flex-1 py-2 rounded-xl text-xs font-bold border transition-colors edit-priority-selected ${colors} ${btn.classList.contains('priority-btn-selected') ? 'priority-btn-selected' : ''} ${btn.classList.contains('edit-sub-priority-selected') ? 'edit-sub-priority-selected' : ''}`;
+        btn.className = `flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold border transition-colors edit-priority-selected ${colors} ${btn.classList.contains('priority-btn-selected') ? 'priority-btn-selected' : ''} ${btn.classList.contains('edit-sub-priority-selected') ? 'edit-sub-priority-selected' : ''}`;
     },
 
     selectBankPriority(btn){ this.applyPriorityStyle(btn); btn.classList.add('priority-btn-selected'); },
@@ -715,7 +715,7 @@ const App = {
                         <input type="time" id="plan-end" required class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-white border border-gray-800" value="16:00">
                     </div>
                     <div>
-                        <label class="text-[10px] text-gray-500 uppercase font-bold block mb-2">Contexte du lieu (Optionnel)</label>
+                        <label class="text-[10px] text-gray-500 uppercase font-bold block mb-2">Filtres (Optionnel)</label>
                         <div class="flex gap-2 flex-wrap">
                             ${AppState.settings.locations.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold bg-[#0D0F12] text-gray-500 border border-transparent" data-loc="${l}">${l}</button>`).join('')}
                         </div>
@@ -771,17 +771,6 @@ const App = {
             return (a.duration || 15) - (b.duration || 15);
         }).slice(0, 5);
 
-        const categoryStats = AppState.categories.map(cat => {
-            const catProjects = AppState.projects.filter(p => p.categoryId === cat.id); 
-            const total = catProjects.length; let done = 0;
-            catProjects.forEach(p => {
-                const projectTasks = AppState.tasks.filter(t => t.projectId === p.id); let tTotal = 0, tComp = 0;
-                projectTasks.forEach(t => { tTotal++; if (t.status === 'done') tComp++; if (t.subtasks) { t.subtasks.forEach(s => { tTotal++; if (s.status === 'done') tComp++; }); } });
-                if (tTotal > 0 && tTotal === tComp) done++;
-            });
-            return { cat: cat.name, total, done, percent: total === 0 ? 0 : Math.round((done / total) * 100) };
-        });
-
         return `
         <div class="space-y-8">
             <section class="bg-[#1A1D24] rounded-3xl p-5 border border-gray-800/50 relative">
@@ -792,7 +781,7 @@ const App = {
                         <div class="flex gap-2 flex-wrap">${AppState.settings.times.map(t=>`<button onclick="App.setHomeTime(${t})" class="flex-1 min-w-[50px] py-2 rounded-xl text-sm font-bold ${AppState.homeTime===t?'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50':'bg-[#0D0F12] text-gray-400 border border-transparent'}">${t}</button>`).join('')}</div>
                     </div>
                     <div>
-                        <label class="text-xs font-semibold text-gray-400 uppercase mb-2 flex items-center justify-between"><span>Lieu(x) possible(s)</span><span class="text-[10px] text-gray-500 font-normal">Vide = Partout</span></label>
+                        <label class="text-xs font-semibold text-gray-400 uppercase mb-2 flex items-center justify-between"><span>Filtre(s) possible(s)</span><span class="text-[10px] text-gray-500 font-normal">Vide = Partout</span></label>
                         <div class="flex gap-2 flex-wrap">${AppState.settings.locations.map(l=>`<button onclick="App.toggleHomeLocation('${l}')" class="flex-1 min-w-[70px] py-2 rounded-xl text-sm font-bold ${AppState.homeLocations.includes(l)?'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50':'bg-[#0D0F12] text-gray-400 border border-transparent'}">${l}</button>`).join('')}</div>
                     </div>
                     <button onclick="App.generateAction()" class="w-full py-4 mt-2 rounded-xl bg-cyan-500 text-black font-black text-lg uppercase transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)]">Trouver quoi faire</button>
@@ -801,10 +790,6 @@ const App = {
             </section>
             
             <section><h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2"><i data-lucide="alert-circle" class="text-red-400 w-4 h-4"></i> Priorités & Rapides</h2><div class="space-y-2">${urgencies.length>0?urgencies.map(t=>this.renderTask(t, false, t.isSubtask ? t.parentId : null, t.isSubtask ? t.parentName : null)).join(''):`<div class="bg-[#1A1D24] rounded-2xl p-6 text-center border border-gray-800 border-dashed"><p class="text-gray-500 text-sm">Tout est sous contrôle.</p></div>`}</div></section>
-            
-            ${categoryStats.length > 0 ? `
-            <section class="mt-8 pb-4"><h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2"><i data-lucide="bar-chart-2" class="text-indigo-400 w-4 h-4"></i> Progression des Dossiers</h2><div class="space-y-3">${categoryStats.map(stat => `<div class="bg-[#1A1D24] rounded-2xl p-4 border border-gray-800"><div class="flex justify-between items-end mb-2"><span class="font-bold text-gray-200">${stat.cat}</span><span class="text-xs font-semibold text-gray-500">${stat.done}/${stat.total} (${stat.percent}%)</span></div><div class="h-2 w-full bg-[#0D0F12] rounded-full overflow-hidden border border-gray-800/50"><div class="h-full bg-indigo-500 rounded-full transition-all duration-1000" style="width: ${stat.percent}%"></div></div></div>`).join('')}</div></section>
-            ` : ''}
         </div>`;
     },
 
@@ -863,7 +848,6 @@ const App = {
             html += `<div class="bg-[#1A1D24] p-4 rounded-2xl border border-cyan-500/30 mb-4 flex flex-col gap-3"><input type="text" id="new-proj-name" placeholder="Nom du projet..." class="w-full bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><div class="flex gap-2"><select id="new-proj-category" class="flex-1 bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-gray-300 border border-gray-800 focus:outline-none"><option value="">Dossier : Aucun</option>${AppState.categories.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select><button onclick="App.addProject()" class="bg-cyan-500 text-black px-4 py-2 rounded-lg text-sm font-bold">OK</button></div></div>`;
         }
 
-        // Rendu des dossiers (Catégories)
         AppState.categories.forEach(cat => {
             const catProjects = AppState.projects.filter(p => p.categoryId === cat.id);
             const isCatExpanded = AppState.expandedCategoryIds.includes(cat.id);
@@ -892,7 +876,6 @@ const App = {
             </div>`;
         });
 
-        // Rendu des projets sans dossier
         const orphanedProjects = AppState.projects.filter(p => !p.categoryId);
         if (orphanedProjects.length > 0) {
             html += `<div class="mt-8 mb-2 px-1 flex items-center gap-2"><div class="h-px bg-gray-800 flex-1"></div><span class="text-xs font-bold text-gray-500 uppercase tracking-widest">Sans Dossier</span><div class="h-px bg-gray-800 flex-1"></div></div>`;
@@ -953,8 +936,8 @@ const App = {
     },
 
     renderSettings() {
-        const renderList = (type, placeholder, isNumber) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Lieux' : ''}</h3><div class="flex gap-2 mb-4"><input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}', ${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
-        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.3.0 (Dossiers & Urgences)</span></div></div>`;
+        const renderList = (type, placeholder, isNumber) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Filtres' : '<i data-lucide="tag" class="text-indigo-400 w-4 h-4"></i> Catégories'}</h3><div class="flex gap-2 mb-4"><input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}', ${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
+        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage, Fatigue...', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.3.1</span></div></div>`;
     },
     
     // ==========================================
@@ -1004,7 +987,7 @@ const App = {
         const tabs=[
             {id:'home',color:'text-cyan-400'},
             {id:'planning',color:'text-amber-400'},
-            {id:'projects',color:'text-indigo-400'}, // Changé en Indigo pour matcher le thème des dossiers
+            {id:'projects',color:'text-indigo-400'},
             {id:'bank',color:'text-emerald-400'},
             {id:'settings',color:'text-gray-200'}
         ];
@@ -1017,6 +1000,14 @@ const App = {
     },
     
     init() {
+        const header = document.querySelector('header');
+        const container = document.getElementById('app-container');
+        if (header && container) {
+            header.style.display = 'none';
+            container.classList.remove('pt-12');
+            container.classList.add('pt-4');
+        }
+
         document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-1 py-4 flex justify-between items-center z-20 pb-8"><button onclick="App.setTab('home')" id="nav-home" class="flex-1 flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="play-circle"></i><span class="text-[9px] font-bold tracking-wider uppercase">Action</span></button><button onclick="App.setTab('projects')" id="nav-projects" class="flex-1 flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[9px] font-bold tracking-wider uppercase">Projets</span></button><button onclick="App.setTab('planning')" id="nav-planning" class="flex-1 flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="calendar"></i><span class="text-[9px] font-bold tracking-wider uppercase">Plan</span></button><button onclick="App.setTab('bank')" id="nav-bank" class="flex-1 flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="list-todo"></i><span class="text-[9px] font-bold tracking-wider uppercase">Banque</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex-1 flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[9px] font-bold tracking-wider uppercase">Param</span></button></nav>`);
         this.render();
     }
