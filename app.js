@@ -15,7 +15,6 @@ const INITIAL_TASKS = [
     { id: 't3', projectId: 'p2', name: 'Prendre rdv garage', duration: 15, locations: ['Ordi', 'Maison'], priority: 'Urgence', status: 'todo', subtasks: [], note: '' }
 ];
 
-// Migration des anciennes catégories texte vers des objets Dossiers
 let savedSettings = JSON.parse(localStorage.getItem('osdevie_settings')) || {
     times: [15, 30, 60, 120], locations: ['Maison', 'Boulot', 'Ordi', 'Jardin']
 };
@@ -35,7 +34,6 @@ if (!savedCats) {
     }
 }
 
-// Migration des projets pour utiliser categoryId au lieu de Category String
 const migrateProjects = (projects, cats) => projects.map(p => {
     let catId = p.categoryId || null;
     if (!catId && p.category) {
@@ -67,16 +65,15 @@ const AppState = {
     daysOfWeek: ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
 
     isEditingSchedule: false, 
-    
     homeTime: 30, homeLocations: [], homeSuggestions: [], homeSearched: false,
-    
-    expandedCategoryIds: [], // Pour gérer l'ouverture des dossiers
+    expandedCategoryIds: [], 
     expandedProjectId: null, 
     showAddProject: false, showAddCategory: false,
-    
-    bankFilter: 'all', bankPriorityFilter: 'all',
     showProjectAddTaskModal: null, showProjectAddSubtaskModal: null,
-    activeMenu: null, deletePrompt: null, editPrompt: null, notePrompt: null
+    
+    // UI Modals
+    activeMenu: null, deletePrompt: null, editPrompt: null, notePrompt: null,
+    taskModal: null // NOUVEAU: La fiche tâche unifiée
 };
 
 // ==========================================
@@ -99,7 +96,7 @@ const App = {
     
     setTab(tab) { AppState.activeTab = tab; this.render(); },
 
-    // --- GESTION DES PARAMÈTRES ET DOSSIERS ---
+    // --- GESTION DES PARAMÈTRES ---
     addSetting(type, inputId) {
         const input = document.getElementById(inputId);
         let val = input.value.trim();
@@ -122,6 +119,7 @@ const App = {
 
     setBufferPercent(val) { AppState.bufferPercent = parseInt(val); this.save(); },
 
+    // --- GESTION DES DOSSIERS ---
     addCategory() {
         const name = document.getElementById('new-cat-name').value;
         if (!name.trim()) return;
@@ -139,59 +137,115 @@ const App = {
         this.render();
     },
 
-    // --- MENUS MODAUX & FORMULAIRES ---
-    openMenu(e, type, id, parentId = null) { if (e) { e.preventDefault(); e.stopPropagation(); } AppState.activeMenu = { type, id, parentId }; this.render(); },
+    // --- FICHE TÂCHE UNIFIÉE (MODAL) ---
+    openTaskModal(id, parentId = null) {
+        let itemData = {};
+        if (parentId) {
+            itemData = AppState.tasks.find(t => t.id === parentId).subtasks.find(s => s.id === id);
+        } else {
+            itemData = AppState.tasks.find(t => t.id === id);
+        }
+        AppState.taskModal = { id, parentId, data: JSON.parse(JSON.stringify(itemData)) };
+        this.render();
+    },
+    closeTaskModal() { AppState.taskModal = null; this.render(); },
+    
+    saveTaskModal(event) {
+        event.preventDefault();
+        const form = event.target;
+        const { id, parentId } = AppState.taskModal;
+        const name = document.getElementById('modal-task-name').value;
+        const duration = parseInt(document.getElementById('modal-task-duration').value);
+        const locations = this.getFormLocations(form);
+        const note = document.getElementById('modal-task-note').value;
+        const priorityBtn = form.querySelector('.modal-priority-selected');
+        const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
+
+        if (parentId) { // C'est une sous-tâche
+            AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, locations, priority, note } : s) } : t);
+        } else { // C'est une tâche principale
+            const projectId = document.getElementById('modal-task-project').value || null;
+            AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, locations, priority, note } : t);
+        }
+        
+        AppState.taskModal = null;
+        this.save();
+    },
+
+    deleteFromTaskModal() {
+        const { id, parentId } = AppState.taskModal;
+        if (confirm("Supprimer définitivement cette tâche ?")) {
+            if (parentId) {
+                AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.filter(s => s.id !== id) } : t);
+            } else {
+                AppState.tasks = AppState.tasks.filter(t => t.id !== id);
+            }
+            AppState.taskModal = null;
+            this.save();
+        }
+    },
+
+    // --- ANCIENS MENUS (Conservés pour les Dossiers et Projets) ---
+    openMenu(e, type, id, parentId = null) { 
+        if (e) { e.preventDefault(); e.stopPropagation(); } 
+        // Si c'est une tâche, on ouvre la nouvelle fiche complète directement
+        if (type === 'task' || type === 'subtask') {
+            this.openTaskModal(id, parentId);
+            return;
+        }
+        AppState.activeMenu = { type, id, parentId }; 
+        this.render(); 
+    },
     closeMenu() { AppState.activeMenu = null; this.render(); },
     
     openEdit() {
-        const { type, id, parentId } = AppState.activeMenu;
-        let itemData = {};
-        if (type === 'category') itemData = AppState.categories.find(c => c.id === id);
-        else if (type === 'project') itemData = AppState.projects.find(p => p.id === id);
-        else if (type === 'task') itemData = AppState.tasks.find(t => t.id === id);
-        else if (type === 'subtask') itemData = AppState.tasks.find(t => t.id === parentId).subtasks.find(s => s.id === id);
-        AppState.editPrompt = { type, id, parentId, data: JSON.parse(JSON.stringify(itemData)) };
+        const { type, id } = AppState.activeMenu;
+        let itemData = type === 'category' ? AppState.categories.find(c => c.id === id) : AppState.projects.find(p => p.id === id);
+        AppState.editPrompt = { type, id, parentId: null, data: JSON.parse(JSON.stringify(itemData)) };
         AppState.activeMenu = null; this.render();
     },
     closeEdit() { AppState.editPrompt = null; this.render(); },
     
-    openNote(type, id, parentId = null) {
-        let itemData = {};
-        if (type === 'category') itemData = AppState.categories.find(c => c.id === id);
-        else if (type === 'project') itemData = AppState.projects.find(p => p.id === id);
-        else if (type === 'task') itemData = AppState.tasks.find(t => t.id === id);
-        else if (type === 'subtask') itemData = AppState.tasks.find(t => t.id === parentId).subtasks.find(s => s.id === id);
-        AppState.notePrompt = { type, id, parentId, note: itemData.note || '' };
+    openNote(type, id) {
+        let itemData = type === 'category' ? AppState.categories.find(c => c.id === id) : AppState.projects.find(p => p.id === id);
+        AppState.notePrompt = { type, id, parentId: null, note: itemData.note || '' };
         AppState.activeMenu = null; this.render();
     },
     closeNote() { AppState.notePrompt = null; this.render(); },
     
     saveNote(event) {
         event.preventDefault();
-        const { type, id, parentId } = AppState.notePrompt;
+        const { type, id } = AppState.notePrompt;
         const noteText = document.getElementById('edit-note-text').value;
         if (type === 'category') AppState.categories = AppState.categories.map(c => c.id === id ? { ...c, note: noteText } : c);
         else if (type === 'project') AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, note: noteText } : p);
-        else if (type === 'task') AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, note: noteText } : t);
-        else if (type === 'subtask') AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, note: noteText } : s) } : t);
         AppState.notePrompt = null; this.save();
     },
 
     saveEdit(event) {
-        event.preventDefault(); const form = event.target; const { type, id, parentId } = AppState.editPrompt;
+        event.preventDefault(); 
+        const { type, id } = AppState.editPrompt;
         const name = document.getElementById('edit-name').value;
         if (type === 'category') {
             AppState.categories = AppState.categories.map(c => c.id === id ? { ...c, name } : c);
         } else if (type === 'project') {
             AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, name, categoryId: document.getElementById('edit-proj-category').value || null } : p);
-        } else if (type === 'task') {
-            const priorityBtn = form.querySelector('.edit-priority-selected');
-            AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId: document.getElementById('edit-project').value || null, duration: parseInt(document.getElementById('edit-duration').value), locations: this.getFormLocations(form), priority: priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne' } : t);
-        } else if (type === 'subtask') {
-            const priorityBtn = form.querySelector('.edit-sub-priority-selected');
-            AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration: parseInt(document.getElementById('edit-sub-duration').value), locations: this.getFormLocations(form), priority: priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne' } : s) } : t);
         }
         AppState.editPrompt = null; this.save();
+    },
+
+    openDelete() { AppState.deletePrompt = { ...AppState.activeMenu }; AppState.activeMenu = null; this.render(); },
+    cancelDelete() { AppState.deletePrompt = null; this.render(); },
+    confirmDelete() {
+        const { type, id } = AppState.deletePrompt;
+        if (type === 'category') {
+            AppState.categories = AppState.categories.filter(c => c.id !== id);
+            AppState.projects.forEach(p => { if (p.categoryId === id) p.categoryId = null; });
+        } else if (type === 'project') { 
+            AppState.projects = AppState.projects.filter(p => p.id !== id); 
+            AppState.tasks = AppState.tasks.filter(t => t.projectId !== id); 
+        }
+        AppState.deletePrompt = null; this.save();
     },
 
     // --- SELECTIONS VISUELLES ---
@@ -205,9 +259,9 @@ const App = {
     },
     getFormLocations(form) { return Array.from(form.querySelectorAll('.loc-selected')).map(b => b.getAttribute('data-loc')); },
 
-    applyPriorityStyle(btn) {
+    applyPriorityStyle(btn, className) {
         btn.parentElement.querySelectorAll('button').forEach(b => { 
-            b.className = "flex-1 py-2 rounded-xl text-xs font-bold bg-[#0D0F12] text-gray-500 border border-transparent transition-colors";
+            b.className = "flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold bg-[#0D0F12] text-gray-500 border border-transparent transition-colors";
         });
         const p = btn.innerText.trim();
         let colors = p === 'Urgence' ? 'bg-red-500/20 text-red-400 border-red-500/50' : 
@@ -215,31 +269,11 @@ const App = {
                      p === 'Moyenne' ? 'bg-amber-500/20 text-amber-400 border-amber-500/50' : 
                      'bg-blue-500/20 text-blue-400 border-blue-500/50';
         
-        btn.className = `flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold border transition-colors edit-priority-selected ${colors} ${btn.classList.contains('priority-btn-selected') ? 'priority-btn-selected' : ''} ${btn.classList.contains('edit-sub-priority-selected') ? 'edit-sub-priority-selected' : ''}`;
+        btn.className = `flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold border transition-colors ${className} ${colors}`;
     },
 
-    selectBankPriority(btn){ this.applyPriorityStyle(btn); btn.classList.add('priority-btn-selected'); },
-    selectEditPriority(btn) { this.applyPriorityStyle(btn); btn.classList.add('edit-priority-selected'); },
-    selectSubEditPriority(btn) { this.applyPriorityStyle(btn); btn.classList.add('edit-sub-priority-selected'); },
-
-    // --- SUPPRESSION ---
-    openDelete() { AppState.deletePrompt = { ...AppState.activeMenu }; AppState.activeMenu = null; this.render(); },
-    cancelDelete() { AppState.deletePrompt = null; this.render(); },
-    confirmDelete() {
-        const { type, id, parentId } = AppState.deletePrompt;
-        if (type === 'category') {
-            AppState.categories = AppState.categories.filter(c => c.id !== id);
-            AppState.projects.forEach(p => { if (p.categoryId === id) p.categoryId = null; });
-        } else if (type === 'project') { 
-            AppState.projects = AppState.projects.filter(p => p.id !== id); 
-            AppState.tasks = AppState.tasks.filter(t => t.projectId !== id); 
-        } else if (type === 'task') { 
-            AppState.tasks = AppState.tasks.filter(t => t.id !== id); 
-        } else if (type === 'subtask') { 
-            AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.filter(s => s.id !== id) } : t); 
-        }
-        AppState.deletePrompt = null; this.save();
-    },
+    selectBankPriority(btn){ this.applyPriorityStyle(btn, 'priority-btn-selected'); },
+    selectModalPriority(btn) { this.applyPriorityStyle(btn, 'modal-priority-selected'); },
     
     // --- ACTIONS TÂCHES ET PROJETS ---
     toggleTask(taskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,status:t.status==='todo'?'done':'todo'} : t); if(AppState.homeSearched) this.generateAction(); this.save(); },
@@ -286,12 +320,10 @@ const App = {
     toggleProjectExpand(id) { AppState.expandedProjectId = AppState.expandedProjectId === id ? null : id; this.render(); },
     toggleAddProject() { AppState.showAddProject = !AppState.showAddProject; this.render(); },
     toggleAddCategory() { AppState.showAddCategory = !AppState.showAddCategory; this.render(); },
-    setBankFilter(filter) { AppState.bankFilter = filter; this.render(); },
-    setBankPriorityFilter(priority) { AppState.bankPriorityFilter = priority; this.render(); },
     setHomeTime(time) { AppState.homeTime=time; this.render(); },
     toggleHomeLocation(loc) { AppState.homeLocations.includes(loc) ? AppState.homeLocations = AppState.homeLocations.filter(l => l !== loc) : AppState.homeLocations.push(loc); this.render(); },
 
-    // --- DRAG & DROP GÉNÉRAL (Projets, Tâches) ---
+    // --- DRAG & DROP ---
     handleDragStart(e, id, type, parentId = null) { e.dataTransfer.setData('text/plain', JSON.stringify({id, type, parentId})); e.currentTarget.classList.add('dragging'); },
     handleDragEnd(e) { e.currentTarget.classList.remove('dragging'); document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over')); },
     handleDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); },
@@ -328,7 +360,6 @@ const App = {
         } catch(err) { console.error(err); }
     },
 
-    // --- DRAG & DROP SPÉCIFIQUE (Plan et Brouillon) ---
     handleScheduleDragStart(e, taskId, slotId) { e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'schedule-task', sourceSlot: slotId})); e.currentTarget.classList.add('opacity-50'); },
     handleScheduleDragEnd(e) { e.currentTarget.classList.remove('opacity-50'); },
     handleDraftDragStart(e, taskId, slotId) { e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'draft-task', sourceSlot: slotId})); e.currentTarget.classList.add('opacity-50'); },
@@ -429,9 +460,18 @@ const App = {
         });
         
         allAvailable.sort((a,b)=> {
-            const dA = a.duration || 15; const dB = b.duration || 15; if (dA !== dB) return dB - dA;
-            const pA = priorityWeights[a.priority || 'Moyenne']; const pB = priorityWeights[b.priority || 'Moyenne']; if (pA !== pB) return pB - pA;
-            if (a.isSubtask && !b.isSubtask) return -1; if (!a.isSubtask && b.isSubtask) return 1; return 0;
+            // BUG CORRIGÉ : D'abord la priorité, ensuite la durée
+            const pA = priorityWeights[a.priority || 'Moyenne']; 
+            const pB = priorityWeights[b.priority || 'Moyenne']; 
+            if (pA !== pB) return pB - pA; // Force de la priorité
+            
+            const dA = a.duration || 15; 
+            const dB = b.duration || 15; 
+            if (dA !== dB) return dB - dA; // Si ex-æquo, le plus long d'abord
+            
+            if (a.isSubtask && !b.isSubtask) return -1; 
+            if (!a.isSubtask && b.isSubtask) return 1; 
+            return 0;
         });
         
         AppState.homeSuggestions = allAvailable.slice(0,5); AppState.homeSearched=true; this.render();
@@ -574,7 +614,7 @@ const App = {
                         <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ${task.duration}m</span>
                         ${hasLocations ? `<span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3 text-emerald-400"></i> ${task.locations.join(', ')}</span>` : ''}
                         <span class="px-2 py-0.5 rounded-md text-[10px] border font-bold ${priorityColors[task.priority || 'Moyenne']}">${task.priority || 'Moyenne'}</span>
-                        ${task.note ? `<span onclick="App.openNote('${type}', '${task.id}'${argParent}); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
+                        ${task.note ? `<span onclick="App.openTaskModal('${task.id}'${argParent}); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
                     </div>
                     ${projectName && !isSubtask ? `<div class="text-[10px] text-cyan-500/70 font-semibold flex items-center gap-1 mt-1 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Tâche du projet : ${projectName}</div>` : ''}
                     ${isSubtask && parentName ? `<div class="text-[10px] text-cyan-500/70 font-semibold flex items-center gap-1 mt-1 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Sous-tâche de : ${parentName} ${projectName ? `(${projectName})` : ''}</div>` : ''}
@@ -582,7 +622,7 @@ const App = {
             </div>
             <div class="flex items-center gap-1 shrink-0 ml-2">
                 ${minimal && !isSubtask ? `<button onclick="event.stopPropagation(); AppState.showProjectAddSubtaskModal = '${task.id}'; App.render();" class="p-2 text-gray-400 hover:text-cyan-400"><i data-lucide="plus" class="w-4 h-4"></i></button>` : ''}
-                <button onclick="App.openMenu(event, '${type}', '${task.id}'${argParent})" class="p-2 text-gray-500 hover:text-cyan-400 rounded-lg"><i data-lucide="more-vertical" class="w-4 h-4"></i></button>
+                <button onclick="App.openTaskModal('${task.id}'${argParent}); event.stopPropagation();" class="p-2 text-gray-500 hover:text-cyan-400 rounded-lg"><i data-lucide="more-vertical" class="w-4 h-4"></i></button>
             </div>
         </div>`;
     },
@@ -824,7 +864,7 @@ const App = {
                 ${AppState.showProjectAddTaskModal === project.id ? `<div class="mb-3 flex gap-2 bg-[#1A1D24] p-2 rounded-xl border border-gray-800"><input type="text" id="project-quick-task-${project.id}" onkeydown="if(event.key==='Enter') App.addProjectTask('${project.id}')" placeholder="Nouvelle tâche..." class="flex-1 bg-transparent px-2 text-xs text-white focus:outline-none" autofocus><button type="button" onclick="App.addProjectTask('${project.id}')" class="bg-cyan-500 text-black px-2 py-1 rounded-lg text-xs font-bold">OK</button></div>`:''}
                 ${projectTasks.length===0?'<p class="text-xs text-gray-600 text-center py-2">Aucune tâche.</p>':projectTasks.map(task=>`<div class="space-y-2 mb-2">${this.renderTask(task,true)}
                     ${AppState.showProjectAddSubtaskModal === task.id ? `<div class="ml-6 mb-2 flex gap-2 bg-[#1A1D24] p-2 rounded-xl border border-gray-800"><input type="text" id="task-quick-subtask-${task.id}" onkeydown="if(event.key==='Enter') App.addSubtask('${task.id}')" placeholder="Nouvelle sous-tâche..." class="flex-1 bg-transparent px-2 text-xs text-white focus:outline-none" autofocus><button type="button" onclick="App.addSubtask('${task.id}')" class="bg-cyan-500 text-black px-2 py-1 rounded-lg text-xs font-bold">OK</button></div>`:''}
-                    ${task.subtasks&&task.subtasks.length>0?`<div class="ml-6 space-y-1.5 border-l border-gray-800 pl-3">${task.subtasks.map(sub=>`<div draggable="true" onclick="App.handleRowTap('${task.projectId}')" ondragstart="App.handleDragStart(event, '${sub.id}', 'subtask', '${task.id}')" ondragend="App.handleDragEnd(event)" ondragover="App.handleDragOver(event)" ondragleave="App.handleDragLeave(event)" ondrop="App.handleDrop(event, '${sub.id}', 'subtask', '${task.id}')" class="draggable-item flex items-center justify-between py-1.5 px-2 rounded-lg bg-[#1A1D24] border border-gray-800/40 hover:bg-[#1f232b] transition-colors"><div class="flex items-center gap-2 flex-1 min-w-0"><button onclick="App.toggleSubtask('${task.id}','${sub.id}'); event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer"><i data-lucide="${sub.status==='done'?'check-circle-2':'circle'}" class="${sub.status==='done'?'text-emerald-500':'text-gray-600'} w-3 h-3"></i></button><div class="flex-1 min-w-0"><span class="text-xs truncate block ${sub.status==='done'?'text-gray-600 line-through':'text-gray-300'}">${sub.name}</span><div class="flex items-center gap-2 mt-0.5 text-[9px] text-gray-500 flex-wrap"><span><i data-lucide="clock" class="w-2 h-2 inline"></i> ${sub.duration || 15}m</span>${sub.locations && sub.locations.length > 0 ? `<span><i data-lucide="map-pin" class="w-2 h-2 inline text-emerald-400"></i> ${sub.locations.join(', ')}</span>` : ''}<span class="px-1 py-0.5 rounded text-[8px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>${sub.note ? `<span onclick="App.openNote('subtask', '${sub.id}', '${task.id}'); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"><i data-lucide="file-text" class="w-2.5 h-2.5"></i></span>` : ''}</div></div></div><button onclick="App.openMenu(event, 'subtask', '${sub.id}', '${task.id}')" class="p-1 text-gray-500 hover:text-cyan-400 shrink-0 ml-1 rounded-md"><i data-lucide="more-vertical" class="w-3 h-3"></i></button></div>`).join('')}</div>`:''}
+                    ${task.subtasks&&task.subtasks.length>0?`<div class="ml-6 space-y-1.5 border-l border-gray-800 pl-3">${task.subtasks.map(sub=>`<div draggable="true" onclick="App.handleRowTap('${task.projectId}')" ondragstart="App.handleDragStart(event, '${sub.id}', 'subtask', '${task.id}')" ondragend="App.handleDragEnd(event)" ondragover="App.handleDragOver(event)" ondragleave="App.handleDragLeave(event)" ondrop="App.handleDrop(event, '${sub.id}', 'subtask', '${task.id}')" class="draggable-item flex items-center justify-between py-1.5 px-2 rounded-lg bg-[#1A1D24] border border-gray-800/40 hover:bg-[#1f232b] transition-colors"><div class="flex items-center gap-2 flex-1 min-w-0"><button onclick="App.toggleSubtask('${task.id}','${sub.id}'); event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer"><i data-lucide="${sub.status==='done'?'check-circle-2':'circle'}" class="${sub.status==='done'?'text-emerald-500':'text-gray-600'} w-3 h-3"></i></button><div class="flex-1 min-w-0"><span class="text-xs truncate block ${sub.status==='done'?'text-gray-600 line-through':'text-gray-300'}">${sub.name}</span><div class="flex items-center gap-2 mt-0.5 text-[9px] text-gray-500 flex-wrap"><span><i data-lucide="clock" class="w-2 h-2 inline"></i> ${sub.duration || 15}m</span>${sub.locations && sub.locations.length > 0 ? `<span><i data-lucide="map-pin" class="w-2 h-2 inline text-emerald-400"></i> ${sub.locations.join(', ')}</span>` : ''}<span class="px-1 py-0.5 rounded text-[8px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>${sub.note ? `<span onclick="App.openTaskModal('${sub.id}', '${task.id}'); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"><i data-lucide="file-text" class="w-2.5 h-2.5"></i></span>` : ''}</div></div></div><button onclick="App.openTaskModal('${sub.id}', '${task.id}'); event.stopPropagation();" class="p-1 text-gray-500 hover:text-cyan-400 shrink-0 ml-1 rounded-md"><i data-lucide="more-vertical" class="w-3 h-3"></i></button></div>`).join('')}</div>`:''}
                 </div>`).join('')}
             </div>`:''}
         </div>`;
@@ -832,13 +872,25 @@ const App = {
     
     renderProjects() {
         let html=`<div class="space-y-4">
-            <div class="flex justify-between items-center mb-6 px-1">
-                <h2 class="text-xl font-black text-white">Dossiers & Projets</h2>
+            <div class="flex justify-between items-center mb-4 px-1">
+                <h2 class="text-xl font-black text-white">Chantiers & Base</h2>
                 <div class="flex gap-2">
                     <button onclick="App.toggleAddCategory()" class="h-8 px-3 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-xs font-bold">+ Dossier</button>
                     <button onclick="App.toggleAddProject()" class="h-8 px-3 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-bold">+ Projet</button>
                 </div>
-            </div>`;
+            </div>
+            
+            <section class="bg-gradient-to-br from-[#1A1D24] to-[#13161c] rounded-2xl p-4 border border-gray-800 mb-6">
+                <form onsubmit="App.addTask(event)" class="space-y-3">
+                    <div class="flex items-center justify-between"><span class="text-xs font-bold text-gray-400 uppercase">Ajout Rapide</span></div>
+                    <input type="text" id="new-task-name" placeholder="Nouvelle tâche..." required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 text-sm">
+                    <div class="flex gap-2"><select id="new-task-project" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-gray-300 border border-gray-800"><option value="">Projet : Aucun</option>${AppState.projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select><select id="new-task-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-gray-300 border border-gray-800 text-center">${AppState.settings.times.map(t => `<option value="${t}">${t}m</option>`).join('')}</select></div>
+                    <div class="flex gap-2 flex-wrap">${AppState.settings.locations.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold bg-[#0D0F12] text-gray-500 border border-transparent" data-loc="${l}">${l}</button>`).join('')}</div>
+                    <div class="flex gap-2 flex-wrap">${['Basse','Moyenne','Haute','Urgence'].map(p=>`<button type="button" onclick="App.selectBankPriority(this)" class="flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold transition-colors ${p==='Moyenne'?'priority-btn-selected bg-amber-500/20 text-amber-400 border border-amber-500/50':'bg-[#0D0F12] text-gray-500 border border-transparent'}">${p}</button>`).join('')}</div>
+                    <button type="submit" class="w-full py-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/50 font-bold uppercase hover:bg-emerald-500 hover:text-black transition-colors text-sm">Ajouter</button>
+                </form>
+            </section>
+            `;
             
         if(AppState.showAddCategory) {
             html += `<div class="bg-[#1A1D24] p-4 rounded-2xl border border-indigo-500/30 mb-4 flex gap-2"><input type="text" id="new-cat-name" placeholder="Nom du dossier..." class="flex-1 bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addCategory()" class="bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold">OK</button></div>`;
@@ -884,60 +936,21 @@ const App = {
             html += `</div>`;
         }
 
-        return html+'</div>';
-    },
-    
-    renderBank() {
-        const filteredTasks = AppState.tasks.filter(t => {
-            if(AppState.bankFilter === 'isolated' && (t.projectId !== null || t.status === 'done')) return false;
-            if(AppState.bankFilter === 'done' && t.status !== 'done') return false;
-            if(AppState.bankFilter === 'all' && t.status === 'done') return false;
-            if(AppState.bankPriorityFilter !== 'all' && t.priority !== AppState.bankPriorityFilter) return false;
-            return true;
-        });
-        let bankListHtml = '';
-        if (filteredTasks.length === 0) { 
-            bankListHtml = '<p class="text-center text-gray-500 text-sm py-8">Aucune tâche.</p>'; 
-        } else {
-            filteredTasks.forEach(task => {
-                bankListHtml += `<div class="mb-3">${this.renderTask(task, true)}`;
-                if (task.subtasks && task.subtasks.length > 0) {
-                    const activeSubs = task.subtasks.filter(s => { if (AppState.bankFilter === 'done') return s.status === 'done'; if (AppState.bankPriorityFilter !== 'all' && s.priority !== AppState.bankPriorityFilter) return false; return s.status !== 'done'; });
-                    if (activeSubs.length > 0) {
-                        const priorityColors={'Urgence':'text-red-400 bg-red-500/10 border-red-500/30', 'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
-                        bankListHtml += `<div class="ml-4 mt-2 space-y-2 border-l-2 border-gray-800/50 pl-3">`;
-                        activeSubs.forEach(sub => {
-                            const isSubDone = sub.status === 'done';
-                            bankListHtml += `<div class="flex items-center justify-between p-3 rounded-xl bg-[#13161c] border border-gray-800/50 hover:border-gray-700 transition-all ${isSubDone ? 'opacity-60' : ''}" onclick="App.handleRowTap('${task.projectId}')"><div class="flex items-center gap-3 flex-1 min-w-0"><button onclick="App.toggleSubtask('${task.id}','${sub.id}'); event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer p-1 -ml-1"><i data-lucide="${isSubDone ? 'check-circle-2' : 'circle'}" class="${isSubDone ? 'text-emerald-500' : 'text-gray-600'} w-4 h-4"></i></button><div class="flex-1 min-w-0"><div class="text-sm ${isSubDone ? 'text-gray-600 line-through' : 'text-gray-300'} font-medium truncate">${sub.name}</div><div class="flex items-center gap-2 mt-1 text-[11px] text-gray-500 flex-wrap"><span><i data-lucide="clock" class="w-3 h-3 inline"></i> ${sub.duration || 15}m</span>${sub.locations && sub.locations.length > 0 ? `<span><i data-lucide="map-pin" class="w-3 h-3 inline text-emerald-400"></i> ${sub.locations.join(', ')}</span>` : ''}<span class="px-1.5 py-0.2 rounded text-[9px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>${sub.note ? `<span onclick="App.openNote('subtask', '${sub.id}', '${task.id}'); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}</div><div class="text-[10px] text-cyan-500/70 font-semibold flex items-center gap-1 mt-0.5 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Sous-tâche de : ${task.name}</div></div></div><button onclick="App.openMenu(event, 'subtask', '${sub.id}', '${task.id}')" class="p-2 text-gray-500 hover:text-cyan-400 shrink-0 ml-1 rounded-lg"><i data-lucide="more-vertical" class="w-4 h-4"></i></button></div>`;
-                        });
-                        bankListHtml += `</div>`;
-                    }
-                }
-                bankListHtml += `</div>`;
-            });
+        // Tâches isolées (L'ancienne banque)
+        const isolatedTasks = AppState.tasks.filter(t => !t.projectId);
+        if (isolatedTasks.length > 0) {
+            html += `<div class="mt-8 mb-4 px-1 flex items-center gap-2"><div class="h-px bg-gray-800 flex-1"></div><span class="text-xs font-bold text-gray-500 uppercase tracking-widest">Tâches Isolées</span><div class="h-px bg-gray-800 flex-1"></div></div>`;
+            html += `<div class="space-y-2">`;
+            html += isolatedTasks.map(t => this.renderTask(t, false)).join('');
+            html += `</div>`;
         }
-        return `
-        <div class="space-y-6">
-            <section class="bg-gradient-to-br from-[#1A1D24] to-[#13161c] rounded-3xl p-5 border border-gray-800">
-                <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2"><i data-lucide="plus" class="text-emerald-400 w-4 h-4"></i> Ajout Rapide</h2>
-                <form onsubmit="App.addTask(event)" class="space-y-4">
-                    <input type="text" id="new-task-name" placeholder="Que faut-il faire ?" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800">
-                    <div class="flex gap-2"><select id="new-task-project" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800"><option value="">Dossier : Aucun</option>${AppState.projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select><select id="new-task-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center">${AppState.settings.times.map(t => `<option value="${t}">${t}m</option>`).join('')}</select></div>
-                    <div class="flex gap-2 flex-wrap">${AppState.settings.locations.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold bg-[#0D0F12] text-gray-500 border border-transparent" data-loc="${l}">${l}</button>`).join('')}</div>
-                    <div class="flex gap-2 flex-wrap">${['Basse','Moyenne','Haute','Urgence'].map(p=>`<button type="button" onclick="App.selectBankPriority(this)" class="flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold transition-colors ${p==='Moyenne'?'priority-btn-selected bg-amber-500/20 text-amber-400 border border-amber-500/50':'bg-[#0D0F12] text-gray-500 border border-transparent'}">${p}</button>`).join('')}</div>
-                    <button type="submit" class="w-full py-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/50 font-bold uppercase hover:bg-emerald-500 hover:text-black transition-colors">Ajouter</button>
-                </form>
-            </section>
-            <section>
-                <div class="flex flex-col gap-3 mb-4 px-1"><div class="flex justify-between items-end"><h2 class="text-xl font-black text-white">Toutes les tâches</h2><div class="flex gap-1 flex-wrap justify-end"><button onclick="App.setBankFilter('all')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='all'?'bg-gray-700 text-white':'bg-[#1A1D24] text-gray-500'}">Actives</button><button onclick="App.setBankFilter('isolated')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='isolated'?'bg-gray-700 text-white':'bg-[#1A1D24] text-gray-500'}">Isolées</button><button onclick="App.setBankFilter('done')" class="text-xs px-2.5 py-1 rounded-full font-bold ${AppState.bankFilter==='done'?'bg-emerald-600 text-white':'bg-[#1A1D24] text-gray-500'}">Effectuée</button></div></div><div class="flex gap-1 items-center overflow-x-auto pb-1"><span class="text-[10px] text-gray-500 uppercase font-bold mr-1">Filtre:</span><button onclick="App.setBankPriorityFilter('all')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='all'?'bg-cyan-500/20 text-cyan-400':'bg-[#1A1D24] text-gray-500'}">Toutes</button><button onclick="App.setBankPriorityFilter('Urgence')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Urgence'?'bg-red-500/20 text-red-400':'bg-[#1A1D24] text-gray-500'}">Urgence</button><button onclick="App.setBankPriorityFilter('Haute')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Haute'?'bg-purple-500/20 text-purple-400':'bg-[#1A1D24] text-gray-500'}">Haute</button><button onclick="App.setBankPriorityFilter('Moyenne')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Moyenne'?'bg-amber-500/20 text-amber-400':'bg-[#1A1D24] text-gray-500'}">Moyenne</button><button onclick="App.setBankPriorityFilter('Basse')" class="text-[11px] px-2 py-0.5 rounded-md font-bold ${AppState.bankPriorityFilter==='Basse'?'bg-blue-500/20 text-blue-400':'bg-[#1A1D24] text-gray-500'}">Basse</button></div></div>
-                <div class="pb-10">${bankListHtml}</div>
-            </section>
-        </div>`;
+
+        return html+'</div>';
     },
 
     renderSettings() {
         const renderList = (type, placeholder, isNumber) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Filtres' : '<i data-lucide="tag" class="text-indigo-400 w-4 h-4"></i> Catégories'}</h3><div class="flex gap-2 mb-4"><input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}', ${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
-        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage, Fatigue...', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.3.1</span></div></div>`;
+        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage, Fatigue...', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.4.0 (Interface simplifiée)</span></div></div>`;
     },
     
     // ==========================================
@@ -948,7 +961,6 @@ const App = {
         if (AppState.activeTab === 'home') content.innerHTML = this.renderHome();
         else if (AppState.activeTab === 'planning') content.innerHTML = this.renderPlanning();
         else if (AppState.activeTab === 'projects') content.innerHTML = this.renderProjects();
-        else if (AppState.activeTab === 'bank') content.innerHTML = this.renderBank();
         else if (AppState.activeTab === 'settings') content.innerHTML = this.renderSettings();
         
         let modalContainer = document.getElementById('modal-container');
@@ -958,12 +970,73 @@ const App = {
             document.getElementById('app-container').appendChild(modalContainer); 
         }
         
-        if (AppState.activeMenu) {
-            modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeMenu()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><div class="p-2 border-b border-gray-800/50"><button onclick="App.openEdit()" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="pencil" class="text-cyan-400 w-5 h-5"></i> Renommer</button><button onclick="App.openNote('${AppState.activeMenu.type}', '${AppState.activeMenu.id}', ${AppState.activeMenu.parentId ? `'${AppState.activeMenu.parentId}'` : 'null'})" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="file-text" class="text-amber-400 w-5 h-5"></i> Gérer la note</button><button onclick="App.openDelete()" class="w-full text-left px-6 py-4 text-red-500 font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="trash-2" class="w-5 h-5"></i> Supprimer</button></div><div class="p-2"><button onclick="App.closeMenu()" class="w-full text-center px-6 py-4 text-gray-500 font-bold hover:bg-[#1f232b] rounded-2xl">Annuler</button></div></div></div>`;
+        // MODAL UNIFIÉ DES TÂCHES
+        if (AppState.taskModal) {
+            const d = AppState.taskModal.data; 
+            const dLocs = d.locations || [];
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeTaskModal()">
+                    <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-black text-white">${AppState.taskModal.parentId ? 'Sous-tâche' : 'Fiche Tâche'}</h3>
+                            <button onclick="App.deleteFromTaskModal()" class="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
+                        </div>
+                        <form onsubmit="App.saveTaskModal(event)" class="space-y-4">
+                            <div>
+                                <label class="text-[10px] text-gray-500 uppercase font-bold">Nom</label>
+                                <input type="text" id="modal-task-name" value="${d.name.replace(/"/g, '&quot;')}" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none">
+                            </div>
+                            
+                            ${!AppState.taskModal.parentId ? `
+                            <div>
+                                <label class="text-[10px] text-gray-500 uppercase font-bold">Projet</label>
+                                <select id="modal-task-project" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none">
+                                    <option value="">Isolée (Aucun projet)</option>
+                                    ${AppState.projects.map(p => `<option value="${p.id}" ${p.id === d.projectId ? 'selected' : ''}>${p.name}</option>`).join('')}
+                                </select>
+                            </div>` : ''}
+
+                            <div>
+                                <label class="text-[10px] text-gray-500 uppercase font-bold">Durée</label>
+                                <select id="modal-task-duration" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">
+                                    ${AppState.settings.times.map(t => `<option value="${t}" ${d.duration == t ? 'selected' : ''}>${t}m</option>`).join('')}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Filtres</label>
+                                <div class="flex gap-2 flex-wrap">
+                                    ${AppState.settings.locations.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" data-loc="${l}" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold ${dLocs.includes(l) ? 'loc-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${l}</button>`).join('')}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Priorité</label>
+                                <div class="flex gap-2 flex-wrap">
+                                    ${['Basse','Moyenne','Haute','Urgence'].map(p => `<button type="button" onclick="App.selectModalPriority(this)" class="flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold transition-colors ${p === (d.priority || 'Moyenne') ? `modal-priority-selected ${p==='Urgence'?'bg-red-500/20 text-red-400 border-red-500/50' : p==='Haute'?'bg-purple-500/20 text-purple-400 border-purple-500/50' : p==='Moyenne'?'bg-amber-500/20 text-amber-400 border-amber-500/50' : 'bg-blue-500/20 text-blue-400 border-blue-500/50'}` : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${p}</button>`).join('')}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="text-[10px] text-gray-500 uppercase font-bold">Notes</label>
+                                <textarea id="modal-task-note" rows="2" class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none placeholder-gray-600" placeholder="Ajouter une note...">${d.note || ''}</textarea>
+                            </div>
+
+                            <div class="flex gap-3 pt-2">
+                                <button type="button" onclick="App.closeTaskModal()" class="flex-1 py-3 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button>
+                                <button type="submit" class="flex-1 py-3 rounded-xl bg-cyan-500 text-black font-bold">Enregistrer</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>`;
+        } 
+        // ANCIENS MODALS pour Dossiers & Projets
+        else if (AppState.activeMenu) {
+            modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeMenu()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><div class="p-2 border-b border-gray-800/50"><button onclick="App.openEdit()" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="pencil" class="text-cyan-400 w-5 h-5"></i> Renommer</button><button onclick="App.openNote('${AppState.activeMenu.type}', '${AppState.activeMenu.id}')" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="file-text" class="text-amber-400 w-5 h-5"></i> Gérer la note</button><button onclick="App.openDelete()" class="w-full text-left px-6 py-4 text-red-500 font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="trash-2" class="w-5 h-5"></i> Supprimer</button></div><div class="p-2"><button onclick="App.closeMenu()" class="w-full text-center px-6 py-4 text-gray-500 font-bold hover:bg-[#1f232b] rounded-2xl">Annuler</button></div></div></div>`;
         } else if (AppState.notePrompt) {
-            modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeNote()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><h3 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="file-text" class="text-amber-400"></i> Note</h3><form onsubmit="App.saveNote(event)" class="space-y-4"><textarea id="edit-note-text" rows="6" class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-amber-500 focus:outline-none placeholder-gray-600" placeholder="Écris ta note ici...">${AppState.notePrompt.note}</textarea><div class="flex gap-3 mt-4"><button type="button" onclick="App.closeNote()" class="flex-1 py-3 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button><button type="submit" class="flex-1 py-3 rounded-xl bg-amber-500 text-black font-bold">Enregistrer</button></div></form></div></div>`;
+            modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeNote()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><h3 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="file-text" class="text-amber-400"></i> Note</h3><form onsubmit="App.saveNote(event)" class="space-y-4"><textarea id="edit-note-text" rows="6" class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-amber-500 focus:outline-none placeholder-gray-600">${AppState.notePrompt.note}</textarea><div class="flex gap-3 mt-4"><button type="button" onclick="App.closeNote()" class="flex-1 py-3 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button><button type="submit" class="flex-1 py-3 rounded-xl bg-amber-500 text-black font-bold">Enregistrer</button></div></form></div></div>`;
         } else if (AppState.editPrompt) {
-            const d = AppState.editPrompt.data; const dLocs = d.locations || []; const dCatId = d.categoryId || '';
+            const d = AppState.editPrompt.data; const dCatId = d.categoryId || '';
             modalContainer.innerHTML = `
                 <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeEdit()">
                     <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
@@ -971,14 +1044,12 @@ const App = {
                         <form onsubmit="App.saveEdit(event)" class="space-y-4">
                             <input type="text" id="edit-name" value="${d.name.replace(/"/g, '&quot;')}" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none">
                             ${AppState.editPrompt.type === 'project' ? `<select id="edit-proj-category" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none"><option value="">Dossier : Aucun</option>${AppState.categories.map(c => `<option value="${c.id}" ${c.id === dCatId ? 'selected' : ''}>${c.name}</option>`).join('')}</select>` : ''}
-                            ${AppState.editPrompt.type === 'task' ? `<div class="flex gap-2"><select id="edit-project" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 focus:outline-none"><option value="">Projet : Aucun</option>${AppState.projects.map(p => `<option value="${p.id}" ${p.id === d.projectId ? 'selected' : ''}>${p.name}</option>`).join('')}</select><select id="edit-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">${AppState.settings.times.map(t => `<option value="${t}" ${d.duration == t ? 'selected' : ''}>${t}m</option>`).join('')}</select></div><div class="flex gap-2 flex-wrap">${AppState.settings.locations.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" data-loc="${l}" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold ${dLocs.includes(l) ? 'loc-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${l}</button>`).join('')}</div><div class="flex gap-2 flex-wrap">${['Basse','Moyenne','Haute','Urgence'].map(p => `<button type="button" onclick="App.selectEditPriority(this)" class="flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold transition-colors ${p === (d.priority || 'Moyenne') ? `edit-priority-selected ${p==='Urgence'?'bg-red-500/20 text-red-400 border-red-500/50' : p==='Haute'?'bg-purple-500/20 text-purple-400 border-purple-500/50' : p==='Moyenne'?'bg-amber-500/20 text-amber-400 border-amber-500/50' : 'bg-blue-500/20 text-blue-400 border-blue-500/50'}` : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${p}</button>`).join('')}</div>` : ''}
-                            ${AppState.editPrompt.type === 'subtask' ? `<div class="flex gap-2"><select id="edit-sub-duration" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">${AppState.settings.times.map(t => `<option value="${t}" ${(d.duration || 15) == t ? 'selected' : ''}>${t}m</option>`).join('')}</select></div><div class="flex gap-2 flex-wrap">${AppState.settings.locations.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" data-loc="${l}" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold ${dLocs.includes(l) ? 'loc-selected bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${l}</button>`).join('')}</div><div class="flex gap-2 flex-wrap">${['Basse','Moyenne','Haute','Urgence'].map(p => `<button type="button" onclick="App.selectSubEditPriority(this)" class="flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold transition-colors ${p === (d.priority || 'Moyenne') ? `edit-sub-priority-selected ${p==='Urgence'?'bg-red-500/20 text-red-400 border-red-500/50' : p==='Haute'?'bg-purple-500/20 text-purple-400 border-purple-500/50' : p==='Moyenne'?'bg-amber-500/20 text-amber-400 border-amber-500/50' : 'bg-blue-500/20 text-blue-400 border-blue-500/50'}` : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${p}</button>`).join('')}</div>` : ''}
                             <div class="flex gap-3 mt-6 pt-2"><button type="button" onclick="App.closeEdit()" class="flex-1 py-3 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button><button type="submit" class="flex-1 py-3 rounded-xl bg-cyan-500 text-black font-bold">Enregistrer</button></div>
                         </form>
                     </div>
                 </div>`;
         } else if (AppState.deletePrompt) {
-            let typeName = AppState.deletePrompt.type === 'category' ? 'ce dossier (les projets à l\'intérieur iront dans "Sans dossier")' : AppState.deletePrompt.type === 'project' ? 'ce projet' : (AppState.deletePrompt.type === 'task' ? 'cette tâche' : 'cette sous-tâche');
+            let typeName = AppState.deletePrompt.type === 'category' ? 'ce dossier (les projets à l\'intérieur iront dans "Sans dossier")' : 'ce projet';
             modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.cancelDelete()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mb-6"></div><h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2"><i data-lucide="trash-2" class="text-red-500"></i> Supprimer ${typeName} ?</h3><p class="text-gray-400 text-sm mb-8">Cette action est définitive.</p><div class="flex gap-3"><button onclick="App.cancelDelete()" class="flex-1 py-4 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button><button onclick="App.confirmDelete()" class="flex-1 py-4 rounded-xl bg-red-500/10 text-red-500 font-bold border border-red-500/50">Supprimer</button></div></div></div>`;
         } else { 
             modalContainer.innerHTML = ''; 
@@ -988,7 +1059,6 @@ const App = {
             {id:'home',color:'text-cyan-400'},
             {id:'planning',color:'text-amber-400'},
             {id:'projects',color:'text-indigo-400'},
-            {id:'bank',color:'text-emerald-400'},
             {id:'settings',color:'text-gray-200'}
         ];
         
@@ -1008,7 +1078,8 @@ const App = {
             container.classList.add('pt-4');
         }
 
-        document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-1 py-4 flex justify-between items-center z-20 pb-8"><button onclick="App.setTab('home')" id="nav-home" class="flex-1 flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="play-circle"></i><span class="text-[9px] font-bold tracking-wider uppercase">Action</span></button><button onclick="App.setTab('projects')" id="nav-projects" class="flex-1 flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[9px] font-bold tracking-wider uppercase">Projets</span></button><button onclick="App.setTab('planning')" id="nav-planning" class="flex-1 flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="calendar"></i><span class="text-[9px] font-bold tracking-wider uppercase">Plan</span></button><button onclick="App.setTab('bank')" id="nav-bank" class="flex-1 flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="list-todo"></i><span class="text-[9px] font-bold tracking-wider uppercase">Banque</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex-1 flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[9px] font-bold tracking-wider uppercase">Param</span></button></nav>`);
+        // MAJ de la navbar (Seulement 4 boutons maintenant)
+        document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 py-4 flex justify-around items-center z-20 pb-8"><button onclick="App.setTab('home')" id="nav-home" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="play-circle"></i><span class="text-[9px] font-bold tracking-wider uppercase">Action</span></button><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[9px] font-bold tracking-wider uppercase">Chantiers & Base</span></button><button onclick="App.setTab('planning')" id="nav-planning" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="calendar"></i><span class="text-[9px] font-bold tracking-wider uppercase">Plan</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[9px] font-bold tracking-wider uppercase">Paramètres</span></button></nav>`);
         this.render();
     }
 };
