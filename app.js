@@ -73,7 +73,7 @@ const AppState = {
     
     // UI Modals
     activeMenu: null, deletePrompt: null, editPrompt: null, notePrompt: null,
-    taskModal: null // NOUVEAU: La fiche tâche unifiée
+    taskModal: null 
 };
 
 // ==========================================
@@ -138,6 +138,16 @@ const App = {
     },
 
     // --- FICHE TÂCHE UNIFIÉE (MODAL) ---
+    openNewTaskModal(projectId = null) {
+        AppState.taskModal = { 
+            id: Date.now().toString(), 
+            parentId: null, 
+            isNew: true,
+            data: { name: '', projectId: projectId, duration: 15, locations: [], priority: 'Moyenne', note: '' } 
+        };
+        this.render();
+    },
+
     openTaskModal(id, parentId = null) {
         let itemData = {};
         if (parentId) {
@@ -145,7 +155,7 @@ const App = {
         } else {
             itemData = AppState.tasks.find(t => t.id === id);
         }
-        AppState.taskModal = { id, parentId, data: JSON.parse(JSON.stringify(itemData)) };
+        AppState.taskModal = { id, parentId, isNew: false, data: JSON.parse(JSON.stringify(itemData)) };
         this.render();
     },
     closeTaskModal() { AppState.taskModal = null; this.render(); },
@@ -153,7 +163,7 @@ const App = {
     saveTaskModal(event) {
         event.preventDefault();
         const form = event.target;
-        const { id, parentId } = AppState.taskModal;
+        const { id, parentId, isNew } = AppState.taskModal;
         const name = document.getElementById('modal-task-name').value;
         const duration = parseInt(document.getElementById('modal-task-duration').value);
         const locations = this.getFormLocations(form);
@@ -161,9 +171,14 @@ const App = {
         const priorityBtn = form.querySelector('.modal-priority-selected');
         const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
 
-        if (parentId) { // C'est une sous-tâche
+        if (isNew) {
+            const projectId = document.getElementById('modal-task-project').value || null;
+            AppState.tasks.unshift({
+                id, name, projectId, duration, locations, priority, note, status: 'todo', subtasks: []
+            });
+        } else if (parentId) {
             AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, locations, priority, note } : s) } : t);
-        } else { // C'est une tâche principale
+        } else {
             const projectId = document.getElementById('modal-task-project').value || null;
             AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, locations, priority, note } : t);
         }
@@ -185,10 +200,9 @@ const App = {
         }
     },
 
-    // --- ANCIENS MENUS (Conservés pour les Dossiers et Projets) ---
+    // --- ANCIENS MENUS (Dossiers et Projets) ---
     openMenu(e, type, id, parentId = null) { 
         if (e) { e.preventDefault(); e.stopPropagation(); } 
-        // Si c'est une tâche, on ouvre la nouvelle fiche complète directement
         if (type === 'task' || type === 'subtask') {
             this.openTaskModal(id, parentId);
             return;
@@ -272,20 +286,12 @@ const App = {
         btn.className = `flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold border transition-colors ${className} ${colors}`;
     },
 
-    selectBankPriority(btn){ this.applyPriorityStyle(btn, 'priority-btn-selected'); },
     selectModalPriority(btn) { this.applyPriorityStyle(btn, 'modal-priority-selected'); },
     
     // --- ACTIONS TÂCHES ET PROJETS ---
     toggleTask(taskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,status:t.status==='todo'?'done':'todo'} : t); if(AppState.homeSearched) this.generateAction(); this.save(); },
     toggleSubtask(taskId,subtaskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,subtasks:t.subtasks.map(s=>s.id===subtaskId ? {...s,status:s.status==='todo'?'done':'todo'} : s)} : t); this.save(); },
     
-    addTask(event){
-        event.preventDefault(); const form = event.target; const priorityBtn = form.querySelector('.priority-btn-selected');
-        const name = document.getElementById('new-task-name').value;
-        if(!name.trim()) return;
-        AppState.tasks.unshift({id: Date.now().toString(), name, projectId: document.getElementById('new-task-project').value || null, duration: parseInt(document.getElementById('new-task-duration').value), locations: this.getFormLocations(form), priority: priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne', status: 'todo', subtasks: [], note: ''});
-        document.getElementById('new-task-name').value = ''; this.save();
-    },
     addProjectTask(projectId){
         const input = document.getElementById(`project-quick-task-${projectId}`); if(!input || !input.value.trim()) return;
         AppState.tasks.unshift({id:Date.now().toString(), name:input.value, projectId:projectId, duration:15, locations:[], priority:'Moyenne', status:'todo', subtasks:[], note:''});
@@ -323,7 +329,7 @@ const App = {
     setHomeTime(time) { AppState.homeTime=time; this.render(); },
     toggleHomeLocation(loc) { AppState.homeLocations.includes(loc) ? AppState.homeLocations = AppState.homeLocations.filter(l => l !== loc) : AppState.homeLocations.push(loc); this.render(); },
 
-    // --- DRAG & DROP ---
+    // --- DRAG & DROP GÉNÉRAL (Projets, Tâches) ---
     handleDragStart(e, id, type, parentId = null) { e.dataTransfer.setData('text/plain', JSON.stringify({id, type, parentId})); e.currentTarget.classList.add('dragging'); },
     handleDragEnd(e) { e.currentTarget.classList.remove('dragging'); document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over')); },
     handleDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); },
@@ -360,6 +366,7 @@ const App = {
         } catch(err) { console.error(err); }
     },
 
+    // --- DRAG & DROP SPÉCIFIQUE (Plan et Brouillon) ---
     handleScheduleDragStart(e, taskId, slotId) { e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'schedule-task', sourceSlot: slotId})); e.currentTarget.classList.add('opacity-50'); },
     handleScheduleDragEnd(e) { e.currentTarget.classList.remove('opacity-50'); },
     handleDraftDragStart(e, taskId, slotId) { e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'draft-task', sourceSlot: slotId})); e.currentTarget.classList.add('opacity-50'); },
@@ -444,7 +451,14 @@ const App = {
                 t.subtasks.forEach(s => {
                     if (s.status !== 'done') {
                         hasActiveSubtasks = true;
-                        if (s.duration <= AppState.homeTime) {
+                        // VERIFICATION DE SEQUENCE POUR SOUS-TACHE
+                        const numSub = parseInt(s.name);
+                        let blockedByPrevSub = false;
+                        if (!isNaN(numSub) && numSub > 1) {
+                            blockedByPrevSub = t.subtasks.some(otherS => parseInt(otherS.name) === (numSub - 1) && otherS.status !== 'done');
+                        }
+                        
+                        if (!blockedByPrevSub && s.duration <= AppState.homeTime) {
                             let matchLoc = true;
                             if (AppState.homeLocations.length > 0) matchLoc = (!s.locations || s.locations.length === 0) ? false : s.locations.some(l => AppState.homeLocations.includes(l));
                             if (matchLoc) allAvailable.push({ ...s, isSubtask: true, parentId: t.id, parentName: t.name, projectId: t.projectId });
@@ -452,10 +466,19 @@ const App = {
                     }
                 });
             }
-            if (!hasActiveSubtasks && t.status !== 'done' && t.duration <= AppState.homeTime) {
-                let matchLoc = true;
-                if (AppState.homeLocations.length > 0) matchLoc = (!t.locations || t.locations.length === 0) ? false : t.locations.some(l => AppState.homeLocations.includes(l));
-                if (matchLoc) allAvailable.push({ ...t, isSubtask: false, projectId: t.projectId });
+            if (!hasActiveSubtasks && t.status !== 'done') {
+                // VERIFICATION DE SEQUENCE POUR TACHE PRINCIPALE
+                const numTask = parseInt(t.name);
+                let blockedByPrevTask = false;
+                if (!isNaN(numTask) && numTask > 1) {
+                    blockedByPrevTask = AppState.tasks.some(otherT => otherT.projectId === t.projectId && parseInt(otherT.name) === (numTask - 1) && otherT.status !== 'done');
+                }
+                
+                if (!blockedByPrevTask && t.duration <= AppState.homeTime) {
+                    let matchLoc = true;
+                    if (AppState.homeLocations.length > 0) matchLoc = (!t.locations || t.locations.length === 0) ? false : t.locations.some(l => AppState.homeLocations.includes(l));
+                    if (matchLoc) allAvailable.push({ ...t, isSubtask: false, projectId: t.projectId });
+                }
             }
         });
         
@@ -463,11 +486,11 @@ const App = {
             // BUG CORRIGÉ : D'abord la priorité, ensuite la durée
             const pA = priorityWeights[a.priority || 'Moyenne']; 
             const pB = priorityWeights[b.priority || 'Moyenne']; 
-            if (pA !== pB) return pB - pA; // Force de la priorité
+            if (pA !== pB) return pB - pA; 
             
             const dA = a.duration || 15; 
             const dB = b.duration || 15; 
-            if (dA !== dB) return dB - dA; // Si ex-æquo, le plus long d'abord
+            if (dA !== dB) return dB - dA; 
             
             if (a.isSubtask && !b.isSubtask) return -1; 
             if (!a.isSubtask && b.isSubtask) return 1; 
@@ -860,10 +883,11 @@ const App = {
                 <div class="flex items-center gap-3"><div class="h-1.5 w-full bg-[#0D0F12] rounded-full overflow-hidden border border-gray-800/50"><div class="h-full rounded-full transition-all duration-1000 ${prog===100?'bg-emerald-400':'bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.5)]'}" style="width:${prog}%"></div></div><span class="text-[10px] font-bold text-gray-500 w-8 text-right">${prog}%</span></div>
             </div>
             ${exp?`<div class="px-4 pb-4 border-t border-gray-800/50 pt-3 bg-[#0D0F12]" onclick="event.stopPropagation()">
-                <div class="flex justify-between items-center mb-3"><span class="text-[10px] font-bold text-gray-500 uppercase">Tâches</span><button onclick="AppState.showProjectAddTaskModal = '${project.id}'; App.render();" class="flex items-center gap-1 text-[10px] text-cyan-400 bg-cyan-500/10 px-2 py-1 rounded-lg border border-cyan-500/30"><i data-lucide="plus" class="w-3 h-3"></i> Tâche</button></div>
-                ${AppState.showProjectAddTaskModal === project.id ? `<div class="mb-3 flex gap-2 bg-[#1A1D24] p-2 rounded-xl border border-gray-800"><input type="text" id="project-quick-task-${project.id}" onkeydown="if(event.key==='Enter') App.addProjectTask('${project.id}')" placeholder="Nouvelle tâche..." class="flex-1 bg-transparent px-2 text-xs text-white focus:outline-none" autofocus><button type="button" onclick="App.addProjectTask('${project.id}')" class="bg-cyan-500 text-black px-2 py-1 rounded-lg text-xs font-bold">OK</button></div>`:''}
+                <div class="flex justify-between items-center mb-3">
+                    <span class="text-[10px] font-bold text-gray-500 uppercase">Tâches</span>
+                    <button onclick="App.openNewTaskModal('${project.id}')" class="flex items-center gap-1 text-[10px] text-cyan-400 bg-cyan-500/10 px-2 py-1 rounded-lg border border-cyan-500/30"><i data-lucide="plus" class="w-3 h-3"></i> Tâche</button>
+                </div>
                 ${projectTasks.length===0?'<p class="text-xs text-gray-600 text-center py-2">Aucune tâche.</p>':projectTasks.map(task=>`<div class="space-y-2 mb-2">${this.renderTask(task,true)}
-                    ${AppState.showProjectAddSubtaskModal === task.id ? `<div class="ml-6 mb-2 flex gap-2 bg-[#1A1D24] p-2 rounded-xl border border-gray-800"><input type="text" id="task-quick-subtask-${task.id}" onkeydown="if(event.key==='Enter') App.addSubtask('${task.id}')" placeholder="Nouvelle sous-tâche..." class="flex-1 bg-transparent px-2 text-xs text-white focus:outline-none" autofocus><button type="button" onclick="App.addSubtask('${task.id}')" class="bg-cyan-500 text-black px-2 py-1 rounded-lg text-xs font-bold">OK</button></div>`:''}
                     ${task.subtasks&&task.subtasks.length>0?`<div class="ml-6 space-y-1.5 border-l border-gray-800 pl-3">${task.subtasks.map(sub=>`<div draggable="true" onclick="App.handleRowTap('${task.projectId}')" ondragstart="App.handleDragStart(event, '${sub.id}', 'subtask', '${task.id}')" ondragend="App.handleDragEnd(event)" ondragover="App.handleDragOver(event)" ondragleave="App.handleDragLeave(event)" ondrop="App.handleDrop(event, '${sub.id}', 'subtask', '${task.id}')" class="draggable-item flex items-center justify-between py-1.5 px-2 rounded-lg bg-[#1A1D24] border border-gray-800/40 hover:bg-[#1f232b] transition-colors"><div class="flex items-center gap-2 flex-1 min-w-0"><button onclick="App.toggleSubtask('${task.id}','${sub.id}'); event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer"><i data-lucide="${sub.status==='done'?'check-circle-2':'circle'}" class="${sub.status==='done'?'text-emerald-500':'text-gray-600'} w-3 h-3"></i></button><div class="flex-1 min-w-0"><span class="text-xs truncate block ${sub.status==='done'?'text-gray-600 line-through':'text-gray-300'}">${sub.name}</span><div class="flex items-center gap-2 mt-0.5 text-[9px] text-gray-500 flex-wrap"><span><i data-lucide="clock" class="w-2 h-2 inline"></i> ${sub.duration || 15}m</span>${sub.locations && sub.locations.length > 0 ? `<span><i data-lucide="map-pin" class="w-2 h-2 inline text-emerald-400"></i> ${sub.locations.join(', ')}</span>` : ''}<span class="px-1 py-0.5 rounded text-[8px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>${sub.note ? `<span onclick="App.openTaskModal('${sub.id}', '${task.id}'); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"><i data-lucide="file-text" class="w-2.5 h-2.5"></i></span>` : ''}</div></div></div><button onclick="App.openTaskModal('${sub.id}', '${task.id}'); event.stopPropagation();" class="p-1 text-gray-500 hover:text-cyan-400 shrink-0 ml-1 rounded-md"><i data-lucide="more-vertical" class="w-3 h-3"></i></button></div>`).join('')}</div>`:''}
                 </div>`).join('')}
             </div>`:''}
@@ -872,25 +896,14 @@ const App = {
     
     renderProjects() {
         let html=`<div class="space-y-4">
-            <div class="flex justify-between items-center mb-4 px-1">
+            <div class="flex justify-between items-center mb-6 px-1">
                 <h2 class="text-xl font-black text-white">Chantiers & Base</h2>
-                <div class="flex gap-2">
-                    <button onclick="App.toggleAddCategory()" class="h-8 px-3 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-xs font-bold">+ Dossier</button>
-                    <button onclick="App.toggleAddProject()" class="h-8 px-3 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-bold">+ Projet</button>
+                <div class="flex gap-1.5">
+                    <button onclick="App.toggleAddCategory()" class="h-8 px-2 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-[10px] font-bold">+ Dossier</button>
+                    <button onclick="App.toggleAddProject()" class="h-8 px-2 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-[10px] font-bold">+ Projet</button>
+                    <button onclick="App.openNewTaskModal()" class="h-8 px-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">+ Tâche</button>
                 </div>
-            </div>
-            
-            <section class="bg-gradient-to-br from-[#1A1D24] to-[#13161c] rounded-2xl p-4 border border-gray-800 mb-6">
-                <form onsubmit="App.addTask(event)" class="space-y-3">
-                    <div class="flex items-center justify-between"><span class="text-xs font-bold text-gray-400 uppercase">Ajout Rapide</span></div>
-                    <input type="text" id="new-task-name" placeholder="Nouvelle tâche..." required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 text-sm">
-                    <div class="flex gap-2"><select id="new-task-project" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-gray-300 border border-gray-800"><option value="">Projet : Aucun</option>${AppState.projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select><select id="new-task-duration" class="w-24 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-gray-300 border border-gray-800 text-center">${AppState.settings.times.map(t => `<option value="${t}">${t}m</option>`).join('')}</select></div>
-                    <div class="flex gap-2 flex-wrap">${AppState.settings.locations.map(l => `<button type="button" onclick="App.toggleFormLocation(this)" class="flex-1 min-w-[70px] py-2 rounded-xl text-xs font-bold bg-[#0D0F12] text-gray-500 border border-transparent" data-loc="${l}">${l}</button>`).join('')}</div>
-                    <div class="flex gap-2 flex-wrap">${['Basse','Moyenne','Haute','Urgence'].map(p=>`<button type="button" onclick="App.selectBankPriority(this)" class="flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold transition-colors ${p==='Moyenne'?'priority-btn-selected bg-amber-500/20 text-amber-400 border border-amber-500/50':'bg-[#0D0F12] text-gray-500 border border-transparent'}">${p}</button>`).join('')}</div>
-                    <button type="submit" class="w-full py-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/50 font-bold uppercase hover:bg-emerald-500 hover:text-black transition-colors text-sm">Ajouter</button>
-                </form>
-            </section>
-            `;
+            </div>`;
             
         if(AppState.showAddCategory) {
             html += `<div class="bg-[#1A1D24] p-4 rounded-2xl border border-indigo-500/30 mb-4 flex gap-2"><input type="text" id="new-cat-name" placeholder="Nom du dossier..." class="flex-1 bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addCategory()" class="bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold">OK</button></div>`;
@@ -950,7 +963,7 @@ const App = {
 
     renderSettings() {
         const renderList = (type, placeholder, isNumber) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Filtres' : '<i data-lucide="tag" class="text-indigo-400 w-4 h-4"></i> Catégories'}</h3><div class="flex gap-2 mb-4"><input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}', ${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
-        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage, Fatigue...', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.4.0 (Interface simplifiée)</span></div></div>`;
+        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage, Fatigue...', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.4.1 (Fusion & Séquence)</span></div></div>`;
     },
     
     // ==========================================
@@ -970,7 +983,6 @@ const App = {
             document.getElementById('app-container').appendChild(modalContainer); 
         }
         
-        // MODAL UNIFIÉ DES TÂCHES
         if (AppState.taskModal) {
             const d = AppState.taskModal.data; 
             const dLocs = d.locations || [];
@@ -978,13 +990,13 @@ const App = {
                 <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeTaskModal()">
                     <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
                         <div class="flex justify-between items-center mb-4">
-                            <h3 class="text-xl font-black text-white">${AppState.taskModal.parentId ? 'Sous-tâche' : 'Fiche Tâche'}</h3>
-                            <button onclick="App.deleteFromTaskModal()" class="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
+                            <h3 class="text-xl font-black text-white">${AppState.taskModal.isNew ? 'Nouvelle Tâche' : (AppState.taskModal.parentId ? 'Sous-tâche' : 'Fiche Tâche')}</h3>
+                            ${!AppState.taskModal.isNew ? `<button onclick="App.deleteFromTaskModal()" class="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors"><i data-lucide="trash-2" class="w-5 h-5"></i></button>` : ''}
                         </div>
                         <form onsubmit="App.saveTaskModal(event)" class="space-y-4">
                             <div>
                                 <label class="text-[10px] text-gray-500 uppercase font-bold">Nom</label>
-                                <input type="text" id="modal-task-name" value="${d.name.replace(/"/g, '&quot;')}" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none">
+                                <input type="text" id="modal-task-name" value="${d.name ? d.name.replace(/"/g, '&quot;') : ''}" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none">
                             </div>
                             
                             ${!AppState.taskModal.parentId ? `
@@ -1029,9 +1041,7 @@ const App = {
                         </form>
                     </div>
                 </div>`;
-        } 
-        // ANCIENS MODALS pour Dossiers & Projets
-        else if (AppState.activeMenu) {
+        } else if (AppState.activeMenu) {
             modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeMenu()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><div class="p-2 border-b border-gray-800/50"><button onclick="App.openEdit()" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="pencil" class="text-cyan-400 w-5 h-5"></i> Renommer</button><button onclick="App.openNote('${AppState.activeMenu.type}', '${AppState.activeMenu.id}')" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="file-text" class="text-amber-400 w-5 h-5"></i> Gérer la note</button><button onclick="App.openDelete()" class="w-full text-left px-6 py-4 text-red-500 font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="trash-2" class="w-5 h-5"></i> Supprimer</button></div><div class="p-2"><button onclick="App.closeMenu()" class="w-full text-center px-6 py-4 text-gray-500 font-bold hover:bg-[#1f232b] rounded-2xl">Annuler</button></div></div></div>`;
         } else if (AppState.notePrompt) {
             modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeNote()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><h3 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="file-text" class="text-amber-400"></i> Note</h3><form onsubmit="App.saveNote(event)" class="space-y-4"><textarea id="edit-note-text" rows="6" class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-amber-500 focus:outline-none placeholder-gray-600">${AppState.notePrompt.note}</textarea><div class="flex gap-3 mt-4"><button type="button" onclick="App.closeNote()" class="flex-1 py-3 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button><button type="submit" class="flex-1 py-3 rounded-xl bg-amber-500 text-black font-bold">Enregistrer</button></div></form></div></div>`;
@@ -1078,7 +1088,6 @@ const App = {
             container.classList.add('pt-4');
         }
 
-        // MAJ de la navbar (Seulement 4 boutons maintenant)
         document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 py-4 flex justify-around items-center z-20 pb-8"><button onclick="App.setTab('home')" id="nav-home" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="play-circle"></i><span class="text-[9px] font-bold tracking-wider uppercase">Action</span></button><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[9px] font-bold tracking-wider uppercase">Chantiers & Base</span></button><button onclick="App.setTab('planning')" id="nav-planning" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="calendar"></i><span class="text-[9px] font-bold tracking-wider uppercase">Plan</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[9px] font-bold tracking-wider uppercase">Paramètres</span></button></nav>`);
         this.render();
     }
