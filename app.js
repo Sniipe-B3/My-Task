@@ -1,5 +1,23 @@
 // ==========================================
-// 1. DONNÉES INITIALES & MIGRATION
+// 0. CONNEXION AU CLOUD FIREBASE
+// ==========================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyDInKtDR1g58e7OXkK3AgMROUXbHOdY7MU",
+    authDomain: "my-task-20e5d.firebaseapp.com",
+    projectId: "my-task-20e5d",
+    storageBucket: "my-task-20e5d.firebasestorage.app",
+    messagingSenderId: "8648826848",
+    appId: "1:8648826848:web:1fe25c1b5a34e0deb55585"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+
+// ==========================================
+// 1. DONNÉES INITIALES & MIGRATION (Sauvegarde Locale de secours)
 // ==========================================
 const INITIAL_PROJECTS = [
     { id: 'p1', name: 'Poulailler', note: '', category: 'Business' },
@@ -15,18 +33,14 @@ const INITIAL_TASKS = [
     { id: 't3', projectId: 'p2', name: 'Prendre rdv garage', duration: 15, locations: ['Ordi', 'Maison'], priority: 'Urgence', status: 'todo', subtasks: [], note: '' }
 ];
 
-let savedSettings = JSON.parse(localStorage.getItem('osdevie_settings')) || {
-    times: [15, 30, 60, 120], locations: ['Maison', 'Boulot', 'Ordi', 'Jardin']
-};
+let savedSettings = JSON.parse(localStorage.getItem('osdevie_settings')) || { times: [15, 30, 60, 120], locations: ['Maison', 'Boulot', 'Ordi', 'Jardin'] };
 let savedCats = JSON.parse(localStorage.getItem('osdevie_categories'));
 
 if (!savedCats) {
     if (savedSettings.categories) {
         if (typeof savedSettings.categories[0] === 'string') {
             savedCats = savedSettings.categories.map((c, i) => ({ id: 'c_' + i + Date.now(), name: c, note: '' }));
-        } else {
-            savedCats = savedSettings.categories; 
-        }
+        } else { savedCats = savedSettings.categories; }
         delete savedSettings.categories;
         localStorage.setItem('osdevie_settings', JSON.stringify(savedSettings));
     } else {
@@ -71,7 +85,6 @@ const AppState = {
     showAddProject: false, showAddCategory: false,
     showProjectAddTaskModal: null, showProjectAddSubtaskModal: null,
     
-    // UI Modals
     activeMenu: null, deletePrompt: null, editPrompt: null, notePrompt: null,
     taskModal: null 
 };
@@ -82,16 +95,36 @@ const AppState = {
 const App = {
     lastTapTime: 0,
     
+    // NOUVEAU: Sauvegarde asynchrone sur Firebase
+    async saveToCloud() {
+        const dataToSave = {
+            categories: AppState.categories,
+            projects: AppState.projects,
+            tasks: AppState.tasks,
+            settings: AppState.settings,
+            availabilities: AppState.availabilities,
+            draftSchedule: AppState.draftSchedule,
+            validatedSchedule: AppState.validatedSchedule,
+            bufferPercent: AppState.bufferPercent
+        };
+        try {
+            await setDoc(doc(db, "osdevie", "donnees_principales"), dataToSave);
+        } catch (e) {
+            console.error("Erreur de sauvegarde Cloud:", e);
+        }
+    },
+
     save() {
-        localStorage.setItem('osdevie_categories', JSON.stringify(AppState.categories));
-        localStorage.setItem('osdevie_projects', JSON.stringify(AppState.projects));
-        localStorage.setItem('osdevie_tasks', JSON.stringify(AppState.tasks));
-        localStorage.setItem('osdevie_settings', JSON.stringify(AppState.settings));
-        localStorage.setItem('osdevie_availabilities', JSON.stringify(AppState.availabilities));
-        localStorage.setItem('osdevie_draftSchedule', JSON.stringify(AppState.draftSchedule));
-        localStorage.setItem('osdevie_validatedSchedule', JSON.stringify(AppState.validatedSchedule));
-        localStorage.setItem('osdevie_buffer', JSON.stringify(AppState.bufferPercent));
+        // Double sécurité : on garde une copie de secours sur le téléphone
+        localStorage.setItem('osdevie_backup_categories', JSON.stringify(AppState.categories));
+        localStorage.setItem('osdevie_backup_projects', JSON.stringify(AppState.projects));
+        localStorage.setItem('osdevie_backup_tasks', JSON.stringify(AppState.tasks));
+        
+        // On met à jour l'écran immédiatement (fluide pour l'utilisateur)
         this.render();
+        
+        // On envoie sur le Cloud discrètement en arrière-plan
+        this.saveToCloud();
     },
     
     setTab(tab) { AppState.activeTab = tab; this.render(); },
@@ -286,6 +319,7 @@ const App = {
         btn.className = `flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold border transition-colors ${className} ${colors}`;
     },
 
+    selectBankPriority(btn){ this.applyPriorityStyle(btn, 'priority-btn-selected'); },
     selectModalPriority(btn) { this.applyPriorityStyle(btn, 'modal-priority-selected'); },
     
     // --- ACTIONS TÂCHES ET PROJETS ---
@@ -326,10 +360,12 @@ const App = {
     toggleProjectExpand(id) { AppState.expandedProjectId = AppState.expandedProjectId === id ? null : id; this.render(); },
     toggleAddProject() { AppState.showAddProject = !AppState.showAddProject; this.render(); },
     toggleAddCategory() { AppState.showAddCategory = !AppState.showAddCategory; this.render(); },
+    setBankFilter(filter) { AppState.bankFilter = filter; this.render(); },
+    setBankPriorityFilter(priority) { AppState.bankPriorityFilter = priority; this.render(); },
     setHomeTime(time) { AppState.homeTime=time; this.render(); },
     toggleHomeLocation(loc) { AppState.homeLocations.includes(loc) ? AppState.homeLocations = AppState.homeLocations.filter(l => l !== loc) : AppState.homeLocations.push(loc); this.render(); },
 
-    // --- DRAG & DROP GÉNÉRAL (Projets, Tâches) ---
+    // --- DRAG & DROP ---
     handleDragStart(e, id, type, parentId = null) { e.dataTransfer.setData('text/plain', JSON.stringify({id, type, parentId})); e.currentTarget.classList.add('dragging'); },
     handleDragEnd(e) { e.currentTarget.classList.remove('dragging'); document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over')); },
     handleDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); },
@@ -366,7 +402,6 @@ const App = {
         } catch(err) { console.error(err); }
     },
 
-    // --- DRAG & DROP SPÉCIFIQUE (Plan et Brouillon) ---
     handleScheduleDragStart(e, taskId, slotId) { e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'schedule-task', sourceSlot: slotId})); e.currentTarget.classList.add('opacity-50'); },
     handleScheduleDragEnd(e) { e.currentTarget.classList.remove('opacity-50'); },
     handleDraftDragStart(e, taskId, slotId) { e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'draft-task', sourceSlot: slotId})); e.currentTarget.classList.add('opacity-50'); },
@@ -451,7 +486,6 @@ const App = {
                 t.subtasks.forEach(s => {
                     if (s.status !== 'done') {
                         hasActiveSubtasks = true;
-                        // VERIFICATION DE SEQUENCE POUR SOUS-TACHE
                         const numSub = parseInt(s.name);
                         let blockedByPrevSub = false;
                         if (!isNaN(numSub) && numSub > 1) {
@@ -467,7 +501,6 @@ const App = {
                 });
             }
             if (!hasActiveSubtasks && t.status !== 'done') {
-                // VERIFICATION DE SEQUENCE POUR TACHE PRINCIPALE
                 const numTask = parseInt(t.name);
                 let blockedByPrevTask = false;
                 if (!isNaN(numTask) && numTask > 1) {
@@ -483,15 +516,12 @@ const App = {
         });
         
         allAvailable.sort((a,b)=> {
-            // BUG CORRIGÉ : D'abord la priorité, ensuite la durée
             const pA = priorityWeights[a.priority || 'Moyenne']; 
             const pB = priorityWeights[b.priority || 'Moyenne']; 
             if (pA !== pB) return pB - pA; 
-            
             const dA = a.duration || 15; 
             const dB = b.duration || 15; 
             if (dA !== dB) return dB - dA; 
-            
             if (a.isSubtask && !b.isSubtask) return -1; 
             if (!a.isSubtask && b.isSubtask) return 1; 
             return 0;
@@ -949,7 +979,6 @@ const App = {
             html += `</div>`;
         }
 
-        // Tâches isolées (L'ancienne banque)
         const isolatedTasks = AppState.tasks.filter(t => !t.projectId);
         if (isolatedTasks.length > 0) {
             html += `<div class="mt-8 mb-4 px-1 flex items-center gap-2"><div class="h-px bg-gray-800 flex-1"></div><span class="text-xs font-bold text-gray-500 uppercase tracking-widest">Tâches Isolées</span><div class="h-px bg-gray-800 flex-1"></div></div>`;
@@ -963,11 +992,11 @@ const App = {
 
     renderSettings() {
         const renderList = (type, placeholder, isNumber) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Filtres' : '<i data-lucide="tag" class="text-indigo-400 w-4 h-4"></i> Catégories'}</h3><div class="flex gap-2 mb-4"><input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}', ${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
-        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage, Fatigue...', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.4.1 (Fusion & Séquence)</span></div></div>`;
+        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage, Fatigue...', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.5.0 (Cloud Sync Firebase)</span></div></div>`;
     },
     
     // ==========================================
-    // 5. AFFICHAGE GLOBAL ET INITIALISATION
+    // 5. AFFICHAGE GLOBAL ET INITIALISATION CLOUD
     // ==========================================
     render() {
         const content = document.getElementById('app-content');
@@ -1079,7 +1108,7 @@ const App = {
         lucide.createIcons();
     },
     
-    init() {
+    async init() {
         const header = document.querySelector('header');
         const container = document.getElementById('app-container');
         if (header && container) {
@@ -1088,9 +1117,49 @@ const App = {
             container.classList.add('pt-4');
         }
 
-        document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 py-4 flex justify-around items-center z-20 pb-8"><button onclick="App.setTab('home')" id="nav-home" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="play-circle"></i><span class="text-[9px] font-bold tracking-wider uppercase">Action</span></button><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[9px] font-bold tracking-wider uppercase">Chantiers & Base</span></button><button onclick="App.setTab('planning')" id="nav-planning" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="calendar"></i><span class="text-[9px] font-bold tracking-wider uppercase">Plan</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[9px] font-bold tracking-wider uppercase">Paramètres</span></button></nav>`);
+        // Ecran de chargement Cloud
+        document.getElementById('app-content').innerHTML = `
+            <div class="flex flex-col items-center justify-center h-full text-cyan-500">
+                <i data-lucide="cloud-cog" class="w-12 h-12 animate-pulse mb-4"></i>
+                <span class="text-sm font-bold tracking-widest uppercase">Synchronisation...</span>
+            </div>
+        `;
+        lucide.createIcons();
+
+        // 1. Tente de récupérer les données du Cloud
+        try {
+            const docRef = doc(db, "osdevie", "donnees_principales");
+            const docSnap = await getDoc(docRef);
+
+            if (docSnap.exists()) {
+                // Le cloud a des données : on les charge !
+                const data = docSnap.data();
+                AppState.categories = data.categories || [];
+                AppState.projects = data.projects || [];
+                AppState.tasks = data.tasks || [];
+                AppState.settings = data.settings || AppState.settings;
+                AppState.availabilities = data.availabilities || [];
+                AppState.draftSchedule = data.draftSchedule || null;
+                AppState.validatedSchedule = data.validatedSchedule || null;
+                AppState.bufferPercent = data.bufferPercent || 85;
+            } else {
+                // Première fois sur Firebase ! On envoie les données locales vers le cloud.
+                console.log("Première synchro Cloud ! On envoie tes données...");
+                await this.saveToCloud();
+            }
+        } catch (e) {
+            // Si pas d'internet, l'app utilisera le localStorage de secours chargé au début du fichier
+            console.error("Mode hors-ligne, utilisation des données locales de secours.", e);
+        }
+
+        // Rendu final de la Navbar et de l'écran
+        document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 py-4 flex justify-around items-center z-20 pb-8"><button onclick="App.setTab('home')" id="nav-home" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="play-circle"></i><span class="text-[9px] font-bold tracking-wider uppercase">Action</span></button><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[9px] font-bold tracking-wider uppercase">Chantiers</span></button><button onclick="App.setTab('planning')" id="nav-planning" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="calendar"></i><span class="text-[9px] font-bold tracking-wider uppercase">Plan</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[9px] font-bold tracking-wider uppercase">Paramètres</span></button></nav>`);
         this.render();
     }
 };
+
+// Rendre l'application accessible globalement car nous sommes dans un <script type="module">
+window.App = App;
+window.AppState = AppState;
 
 window.onload = () => App.init();
