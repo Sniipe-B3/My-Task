@@ -83,7 +83,7 @@ const AppState = {
     expandedCategoryIds: [], 
     expandedProjectId: null, 
     showAddProject: false, showAddCategory: false,
-    showProjectAddTaskModal: null, showProjectAddSubtaskModal: null,
+    showProjectAddTaskModal: null, 
     
     activeMenu: null, deletePrompt: null, editPrompt: null, notePrompt: null,
     taskModal: null 
@@ -95,7 +95,6 @@ const AppState = {
 const App = {
     lastTapTime: 0,
     
-    // NOUVEAU: Sauvegarde asynchrone sur Firebase
     async saveToCloud() {
         const dataToSave = {
             categories: AppState.categories,
@@ -115,15 +114,10 @@ const App = {
     },
 
     save() {
-        // Double sécurité : on garde une copie de secours sur le téléphone
         localStorage.setItem('osdevie_backup_categories', JSON.stringify(AppState.categories));
         localStorage.setItem('osdevie_backup_projects', JSON.stringify(AppState.projects));
         localStorage.setItem('osdevie_backup_tasks', JSON.stringify(AppState.tasks));
-        
-        // On met à jour l'écran immédiatement (fluide pour l'utilisateur)
         this.render();
-        
-        // On envoie sur le Cloud discrètement en arrière-plan
         this.saveToCloud();
     },
     
@@ -181,6 +175,17 @@ const App = {
         this.render();
     },
 
+    // NOUVEAUTÉ : Ajout spécifique pour les sous-tâches
+    openNewSubtaskModal(parentId) {
+        AppState.taskModal = { 
+            id: Date.now().toString(), 
+            parentId: parentId, 
+            isNew: true,
+            data: { name: '', duration: 15, locations: [], priority: 'Moyenne', note: '' } 
+        };
+        this.render();
+    },
+
     openTaskModal(id, parentId = null) {
         let itemData = {};
         if (parentId) {
@@ -191,6 +196,7 @@ const App = {
         AppState.taskModal = { id, parentId, isNew: false, data: JSON.parse(JSON.stringify(itemData)) };
         this.render();
     },
+    
     closeTaskModal() { AppState.taskModal = null; this.render(); },
     
     saveTaskModal(event) {
@@ -204,16 +210,28 @@ const App = {
         const priorityBtn = form.querySelector('.modal-priority-selected');
         const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
 
-        if (isNew) {
-            const projectId = document.getElementById('modal-task-project').value || null;
-            AppState.tasks.unshift({
-                id, name, projectId, duration, locations, priority, note, status: 'todo', subtasks: []
+        if (parentId) { 
+            // C'est une sous-tâche
+            AppState.tasks = AppState.tasks.map(t => {
+                if (t.id === parentId) {
+                    if (isNew) {
+                        return { ...t, subtasks: [...(t.subtasks || []), { id, name, duration, locations, priority, note, status: 'todo' }] };
+                    } else {
+                        return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, locations, priority, note } : s) };
+                    }
+                }
+                return t;
             });
-        } else if (parentId) {
-            AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, locations, priority, note } : s) } : t);
-        } else {
+        } else { 
+            // C'est une tâche principale
             const projectId = document.getElementById('modal-task-project').value || null;
-            AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, locations, priority, note } : t);
+            if (isNew) {
+                AppState.tasks.unshift({
+                    id, name, projectId, duration, locations, priority, note, status: 'todo', subtasks: []
+                });
+            } else {
+                AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, locations, priority, note } : t);
+            }
         }
         
         AppState.taskModal = null;
@@ -331,11 +349,7 @@ const App = {
         AppState.tasks.unshift({id:Date.now().toString(), name:input.value, projectId:projectId, duration:15, locations:[], priority:'Moyenne', status:'todo', subtasks:[], note:''});
         AppState.showProjectAddTaskModal = null; this.save();
     },
-    addSubtask(taskId){
-        const input = document.getElementById(`task-quick-subtask-${taskId}`); if(!input || !input.value.trim()) return;
-        AppState.tasks = AppState.tasks.map(t => t.id === taskId ? {...t, subtasks: [...(t.subtasks||[]), {id: Date.now().toString(), name:input.value, duration: 15, locations: [], priority: 'Moyenne', status: 'todo', note: ''}]} : t);
-        AppState.showProjectAddSubtaskModal = null; this.save();
-    },
+    
     addProject(){
         const name=document.getElementById('new-proj-name').value; if(!name.trim()) return;
         AppState.projects.push({id:Date.now().toString(), name, categoryId:document.getElementById('new-proj-category').value || null, note:''});
@@ -360,12 +374,10 @@ const App = {
     toggleProjectExpand(id) { AppState.expandedProjectId = AppState.expandedProjectId === id ? null : id; this.render(); },
     toggleAddProject() { AppState.showAddProject = !AppState.showAddProject; this.render(); },
     toggleAddCategory() { AppState.showAddCategory = !AppState.showAddCategory; this.render(); },
-    setBankFilter(filter) { AppState.bankFilter = filter; this.render(); },
-    setBankPriorityFilter(priority) { AppState.bankPriorityFilter = priority; this.render(); },
     setHomeTime(time) { AppState.homeTime=time; this.render(); },
     toggleHomeLocation(loc) { AppState.homeLocations.includes(loc) ? AppState.homeLocations = AppState.homeLocations.filter(l => l !== loc) : AppState.homeLocations.push(loc); this.render(); },
 
-    // --- DRAG & DROP ---
+    // --- DRAG & DROP GÉNÉRAL ---
     handleDragStart(e, id, type, parentId = null) { e.dataTransfer.setData('text/plain', JSON.stringify({id, type, parentId})); e.currentTarget.classList.add('dragging'); },
     handleDragEnd(e) { e.currentTarget.classList.remove('dragging'); document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over')); },
     handleDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); },
@@ -402,6 +414,7 @@ const App = {
         } catch(err) { console.error(err); }
     },
 
+    // --- DRAG & DROP SPÉCIFIQUE (Plan et Brouillon) ---
     handleScheduleDragStart(e, taskId, slotId) { e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'schedule-task', sourceSlot: slotId})); e.currentTarget.classList.add('opacity-50'); },
     handleScheduleDragEnd(e) { e.currentTarget.classList.remove('opacity-50'); },
     handleDraftDragStart(e, taskId, slotId) { e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'draft-task', sourceSlot: slotId})); e.currentTarget.classList.add('opacity-50'); },
@@ -519,9 +532,11 @@ const App = {
             const pA = priorityWeights[a.priority || 'Moyenne']; 
             const pB = priorityWeights[b.priority || 'Moyenne']; 
             if (pA !== pB) return pB - pA; 
+            
             const dA = a.duration || 15; 
             const dB = b.duration || 15; 
             if (dA !== dB) return dB - dA; 
+            
             if (a.isSubtask && !b.isSubtask) return -1; 
             if (!a.isSubtask && b.isSubtask) return 1; 
             return 0;
@@ -674,7 +689,7 @@ const App = {
                 </div>
             </div>
             <div class="flex items-center gap-1 shrink-0 ml-2">
-                ${minimal && !isSubtask ? `<button onclick="event.stopPropagation(); AppState.showProjectAddSubtaskModal = '${task.id}'; App.render();" class="p-2 text-gray-400 hover:text-cyan-400"><i data-lucide="plus" class="w-4 h-4"></i></button>` : ''}
+                ${minimal && !isSubtask ? `<button onclick="event.stopPropagation(); App.openNewSubtaskModal('${task.id}');" class="p-2 text-gray-400 hover:text-cyan-400"><i data-lucide="plus" class="w-4 h-4"></i></button>` : ''}
                 <button onclick="App.openTaskModal('${task.id}'${argParent}); event.stopPropagation();" class="p-2 text-gray-500 hover:text-cyan-400 rounded-lg"><i data-lucide="more-vertical" class="w-4 h-4"></i></button>
             </div>
         </div>`;
@@ -892,7 +907,6 @@ const App = {
         projectTasks.forEach(t=>{ total++; if(t.status==='done')comp++; if(t.subtasks){t.subtasks.forEach(s=>{total++;if(s.status==='done')comp++})} });
         const prog=total===0?0:Math.round((comp/total)*100); 
         const exp = AppState.expandedProjectId === project.id;
-        const priorityColors={'Urgence':'text-red-400 bg-red-500/10 border-red-500/30', 'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
         
         return `
         <div draggable="true" ondragstart="App.handleDragStart(event, '${project.id}', 'project')" class="bg-[#13161c] rounded-2xl border border-gray-800 overflow-hidden mb-3 draggable-item">
@@ -918,7 +932,7 @@ const App = {
                     <button onclick="App.openNewTaskModal('${project.id}')" class="flex items-center gap-1 text-[10px] text-cyan-400 bg-cyan-500/10 px-2 py-1 rounded-lg border border-cyan-500/30"><i data-lucide="plus" class="w-3 h-3"></i> Tâche</button>
                 </div>
                 ${projectTasks.length===0?'<p class="text-xs text-gray-600 text-center py-2">Aucune tâche.</p>':projectTasks.map(task=>`<div class="space-y-2 mb-2">${this.renderTask(task,true)}
-                    ${task.subtasks&&task.subtasks.length>0?`<div class="ml-6 space-y-1.5 border-l border-gray-800 pl-3">${task.subtasks.map(sub=>`<div draggable="true" onclick="App.handleRowTap('${task.projectId}')" ondragstart="App.handleDragStart(event, '${sub.id}', 'subtask', '${task.id}')" ondragend="App.handleDragEnd(event)" ondragover="App.handleDragOver(event)" ondragleave="App.handleDragLeave(event)" ondrop="App.handleDrop(event, '${sub.id}', 'subtask', '${task.id}')" class="draggable-item flex items-center justify-between py-1.5 px-2 rounded-lg bg-[#1A1D24] border border-gray-800/40 hover:bg-[#1f232b] transition-colors"><div class="flex items-center gap-2 flex-1 min-w-0"><button onclick="App.toggleSubtask('${task.id}','${sub.id}'); event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer"><i data-lucide="${sub.status==='done'?'check-circle-2':'circle'}" class="${sub.status==='done'?'text-emerald-500':'text-gray-600'} w-3 h-3"></i></button><div class="flex-1 min-w-0"><span class="text-xs truncate block ${sub.status==='done'?'text-gray-600 line-through':'text-gray-300'}">${sub.name}</span><div class="flex items-center gap-2 mt-0.5 text-[9px] text-gray-500 flex-wrap"><span><i data-lucide="clock" class="w-2 h-2 inline"></i> ${sub.duration || 15}m</span>${sub.locations && sub.locations.length > 0 ? `<span><i data-lucide="map-pin" class="w-2 h-2 inline text-emerald-400"></i> ${sub.locations.join(', ')}</span>` : ''}<span class="px-1 py-0.5 rounded text-[8px] border ${priorityColors[sub.priority || 'Moyenne']}">${sub.priority || 'Moyenne'}</span>${sub.note ? `<span onclick="App.openTaskModal('${sub.id}', '${task.id}'); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"><i data-lucide="file-text" class="w-2.5 h-2.5"></i></span>` : ''}</div></div></div><button onclick="App.openTaskModal('${sub.id}', '${task.id}'); event.stopPropagation();" class="p-1 text-gray-500 hover:text-cyan-400 shrink-0 ml-1 rounded-md"><i data-lucide="more-vertical" class="w-3 h-3"></i></button></div>`).join('')}</div>`:''}
+                    ${task.subtasks&&task.subtasks.length>0?`<div class="ml-6 space-y-1.5 border-l border-gray-800 pl-3">${task.subtasks.map(sub=>`<div draggable="true" onclick="App.handleRowTap('${task.projectId}')" ondragstart="App.handleDragStart(event, '${sub.id}', 'subtask', '${task.id}')" ondragend="App.handleDragEnd(event)" ondragover="App.handleDragOver(event)" ondragleave="App.handleDragLeave(event)" ondrop="App.handleDrop(event, '${sub.id}', 'subtask', '${task.id}')" class="draggable-item flex items-center justify-between py-1.5 px-2 rounded-lg bg-[#1A1D24] border border-gray-800/40 hover:bg-[#1f232b] transition-colors"><div class="flex items-center gap-2 flex-1 min-w-0"><button onclick="App.toggleSubtask('${task.id}','${sub.id}'); event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer"><i data-lucide="${sub.status==='done'?'check-circle-2':'circle'}" class="${sub.status==='done'?'text-emerald-500':'text-gray-600'} w-3 h-3"></i></button><div class="flex-1 min-w-0"><span class="text-xs truncate block ${sub.status==='done'?'text-gray-600 line-through':'text-gray-300'}">${sub.name}</span></div></div><button onclick="App.openTaskModal('${sub.id}', '${task.id}'); event.stopPropagation();" class="p-1 text-gray-500 hover:text-cyan-400 shrink-0 ml-1 rounded-md"><i data-lucide="more-vertical" class="w-3 h-3"></i></button></div>`).join('')}</div>`:''}
                 </div>`).join('')}
             </div>`:''}
         </div>`;
@@ -992,7 +1006,7 @@ const App = {
 
     renderSettings() {
         const renderList = (type, placeholder, isNumber) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Filtres' : '<i data-lucide="tag" class="text-indigo-400 w-4 h-4"></i> Catégories'}</h3><div class="flex gap-2 mb-4"><input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}', ${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
-        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage, Fatigue...', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.5.0 (Cloud Sync Firebase)</span></div></div>`;
+        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage, Fatigue...', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.5.1 (Modal & Moteur Fix)</span></div></div>`;
     },
     
     // ==========================================
@@ -1117,7 +1131,6 @@ const App = {
             container.classList.add('pt-4');
         }
 
-        // Ecran de chargement Cloud
         document.getElementById('app-content').innerHTML = `
             <div class="flex flex-col items-center justify-center h-full text-cyan-500">
                 <i data-lucide="cloud-cog" class="w-12 h-12 animate-pulse mb-4"></i>
@@ -1126,13 +1139,11 @@ const App = {
         `;
         lucide.createIcons();
 
-        // 1. Tente de récupérer les données du Cloud
         try {
             const docRef = doc(db, "osdevie", "donnees_principales");
             const docSnap = await getDoc(docRef);
 
             if (docSnap.exists()) {
-                // Le cloud a des données : on les charge !
                 const data = docSnap.data();
                 AppState.categories = data.categories || [];
                 AppState.projects = data.projects || [];
@@ -1143,23 +1154,18 @@ const App = {
                 AppState.validatedSchedule = data.validatedSchedule || null;
                 AppState.bufferPercent = data.bufferPercent || 85;
             } else {
-                // Première fois sur Firebase ! On envoie les données locales vers le cloud.
                 console.log("Première synchro Cloud ! On envoie tes données...");
                 await this.saveToCloud();
             }
         } catch (e) {
-            // Si pas d'internet, l'app utilisera le localStorage de secours chargé au début du fichier
             console.error("Mode hors-ligne, utilisation des données locales de secours.", e);
         }
 
-        // Rendu final de la Navbar et de l'écran
         document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 py-4 flex justify-around items-center z-20 pb-8"><button onclick="App.setTab('home')" id="nav-home" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="play-circle"></i><span class="text-[9px] font-bold tracking-wider uppercase">Action</span></button><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[9px] font-bold tracking-wider uppercase">Chantiers</span></button><button onclick="App.setTab('planning')" id="nav-planning" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="calendar"></i><span class="text-[9px] font-bold tracking-wider uppercase">Plan</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[9px] font-bold tracking-wider uppercase">Paramètres</span></button></nav>`);
         this.render();
     }
 };
 
-// Rendre l'application accessible globalement car nous sommes dans un <script type="module">
 window.App = App;
 window.AppState = AppState;
-
 window.onload = () => App.init();
