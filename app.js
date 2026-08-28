@@ -1,8 +1,9 @@
 // ==========================================
-// 0. CONNEXION AU CLOUD FIREBASE
+// 0. CONNEXION AU CLOUD FIREBASE & AUTHENTIFICATION
 // ==========================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyDInKtDR1g58e7OXkK3AgMROUXbHOdY7MU",
@@ -15,67 +16,31 @@ const firebaseConfig = {
 
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
+const auth = getAuth(firebaseApp);
 
 // ==========================================
-// 1. DONNÉES INITIALES & MIGRATION (Sauvegarde Locale de secours)
+// 1. DONNÉES INITIALES (Création de compte)
 // ==========================================
-const INITIAL_PROJECTS = [
-    { id: 'p1', name: 'Poulailler', note: '', category: 'Business' },
-    { id: 'p2', name: 'Entretien Peugeot', note: '', category: 'Famille' }
-];
-
-const INITIAL_TASKS = [
-    { id: 't1', projectId: 'p1', name: '1. Acheter le bois', duration: 60, locations: ['Boulot'], priority: 'Haute', status: 'done', subtasks: [], note: '' },
-    { id: 't2', projectId: 'p1', name: '2. Monter les murs', duration: 120, locations: ['Jardin', 'Maison'], priority: 'Moyenne', status: 'todo', note: 'Penser à vérifier le niveau', subtasks: [
-        { id: 's1', name: 'Découper planches', duration: 30, locations: ['Jardin'], priority: 'Haute', status: 'todo', note: '' },
-        { id: 's2', name: 'Visser', duration: 45, locations: ['Jardin'], priority: 'Basse', status: 'todo', note: '' }
-    ]},
-    { id: 't3', projectId: 'p2', name: 'Prendre rdv garage', duration: 15, locations: ['Ordi', 'Maison'], priority: 'Urgence', status: 'todo', subtasks: [], note: '' }
-];
-
-let savedSettings = JSON.parse(localStorage.getItem('osdevie_settings')) || { times: [15, 30, 60, 120], locations: ['Maison', 'Boulot', 'Ordi', 'Jardin'] };
-let savedCats = JSON.parse(localStorage.getItem('osdevie_categories'));
-
-if (!savedCats) {
-    if (savedSettings.categories) {
-        if (typeof savedSettings.categories[0] === 'string') {
-            savedCats = savedSettings.categories.map((c, i) => ({ id: 'c_' + i + Date.now(), name: c, note: '' }));
-        } else { savedCats = savedSettings.categories; }
-        delete savedSettings.categories;
-        localStorage.setItem('osdevie_settings', JSON.stringify(savedSettings));
-    } else {
-        savedCats = [{ id: 'c1', name: 'Business', note: '' }, { id: 'c2', name: 'Famille', note: '' }];
-    }
-}
-
-const migrateProjects = (projects, cats) => projects.map(p => {
-    let catId = p.categoryId || null;
-    if (!catId && p.category) {
-        let found = cats.find(c => c.name === p.category);
-        if (found) catId = found.id;
-        delete p.category; 
-    }
-    return { ...p, categoryId: catId };
-});
-
-const migrateTasks = (tasks) => tasks.map(t => ({ 
-    ...t, locations: t.locations || [], note: t.note || '', priority: t.priority || 'Moyenne',
-    subtasks: (t.subtasks || []).map(s => ({ ...s, locations: s.locations || [], note: s.note || '', priority: s.priority || 'Moyenne' }))
-}));
+const getDefaultSettings = () => ({ times: [15, 30, 60, 120], locations: ['Maison', 'Boulot', 'Ordi', 'Jardin'] });
+const getDefaultCategories = () => ([{ id: 'c1', name: 'Business', note: '' }, { id: 'c2', name: 'Famille', note: '' }]);
 
 // ==========================================
 // 2. ÉTAT GLOBAL DE L'APPLICATION
 // ==========================================
 const AppState = {
+    currentUser: null, // Stocke l'utilisateur Firebase connecté
+    authMode: 'login', // 'login' ou 'register' pour l'écran d'accueil
+    authError: '',
+
     activeTab: 'planning',
-    settings: savedSettings,
-    categories: savedCats,
-    projects: migrateProjects(JSON.parse(localStorage.getItem('osdevie_projects')) || INITIAL_PROJECTS, savedCats),
-    tasks: migrateTasks(JSON.parse(localStorage.getItem('osdevie_tasks')) || INITIAL_TASKS),
-    availabilities: JSON.parse(localStorage.getItem('osdevie_availabilities')) || [],
-    draftSchedule: JSON.parse(localStorage.getItem('osdevie_draftSchedule')) || null,
-    validatedSchedule: JSON.parse(localStorage.getItem('osdevie_validatedSchedule')) || null,
-    bufferPercent: JSON.parse(localStorage.getItem('osdevie_buffer')) || 85,
+    settings: getDefaultSettings(),
+    categories: [],
+    projects: [],
+    tasks: [],
+    availabilities: [],
+    draftSchedule: null,
+    validatedSchedule: null,
+    bufferPercent: 85,
     daysOfWeek: ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
 
     isEditingSchedule: false, 
@@ -83,7 +48,7 @@ const AppState = {
     expandedCategoryIds: [], 
     expandedProjectId: null, 
     showAddProject: false, showAddCategory: false,
-    showProjectAddTaskModal: null, 
+    showProjectAddTaskModal: null, showProjectAddSubtaskModal: null,
     
     activeMenu: null, deletePrompt: null, editPrompt: null, notePrompt: null,
     taskModal: null 
@@ -95,7 +60,55 @@ const AppState = {
 const App = {
     lastTapTime: 0,
     
+    // --- AUTHENTIFICATION ---
+    async handleAuth(event) {
+        event.preventDefault();
+        const email = document.getElementById('auth-email').value;
+        const password = document.getElementById('auth-password').value;
+        AppState.authError = '';
+        this.render();
+
+        try {
+            if (AppState.authMode === 'login') {
+                await signInWithEmailAndPassword(auth, email, password);
+            } else {
+                await createUserWithEmailAndPassword(auth, email, password);
+                // Si nouveau compte, on initialise des données de base
+                AppState.settings = getDefaultSettings();
+                AppState.categories = getDefaultCategories();
+                AppState.projects = [];
+                AppState.tasks = [];
+                await this.saveToCloud();
+            }
+        } catch (error) {
+            console.error("Auth error:", error);
+            AppState.authError = error.message.includes('invalid-credential') || error.message.includes('user-not-found') || error.message.includes('wrong-password') 
+                ? "Email ou mot de passe incorrect." 
+                : (error.message.includes('email-already-in-use') ? "Cet email est déjà utilisé." : "Erreur de connexion.");
+            this.render();
+        }
+    },
+
+    toggleAuthMode() {
+        AppState.authMode = AppState.authMode === 'login' ? 'register' : 'login';
+        AppState.authError = '';
+        this.render();
+    },
+
+    async logout() {
+        if(confirm("Veux-tu vraiment te déconnecter ?")) {
+            await signOut(auth);
+            // On vide les données locales par sécurité
+            AppState.currentUser = null;
+            AppState.categories = []; AppState.projects = []; AppState.tasks = []; AppState.availabilities = [];
+            this.render();
+        }
+    },
+
+    // --- SYNCHRONISATION ---
     async saveToCloud() {
+        if (!AppState.currentUser) return; // Sécurité
+
         const dataToSave = {
             categories: AppState.categories,
             projects: AppState.projects,
@@ -107,16 +120,15 @@ const App = {
             bufferPercent: AppState.bufferPercent
         };
         try {
-            await setDoc(doc(db, "osdevie", "donnees_principales"), dataToSave);
+            // Sauvegarde dans users/ID_UTILISATEUR (Totalement privé)
+            await setDoc(doc(db, "users", AppState.currentUser.uid), dataToSave);
         } catch (e) {
             console.error("Erreur de sauvegarde Cloud:", e);
         }
     },
 
     save() {
-        localStorage.setItem('osdevie_backup_categories', JSON.stringify(AppState.categories));
-        localStorage.setItem('osdevie_backup_projects', JSON.stringify(AppState.projects));
-        localStorage.setItem('osdevie_backup_tasks', JSON.stringify(AppState.tasks));
+        // Optionnel : tu pourrais garder une sauvegarde Locale par utilisateur ici si besoin de mode hors ligne poussé
         this.render();
         this.saveToCloud();
     },
@@ -175,7 +187,6 @@ const App = {
         this.render();
     },
 
-    // NOUVEAUTÉ : Ajout spécifique pour les sous-tâches
     openNewSubtaskModal(parentId) {
         AppState.taskModal = { 
             id: Date.now().toString(), 
@@ -211,7 +222,6 @@ const App = {
         const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
 
         if (parentId) { 
-            // C'est une sous-tâche
             AppState.tasks = AppState.tasks.map(t => {
                 if (t.id === parentId) {
                     if (isNew) {
@@ -223,7 +233,6 @@ const App = {
                 return t;
             });
         } else { 
-            // C'est une tâche principale
             const projectId = document.getElementById('modal-task-project').value || null;
             if (isNew) {
                 AppState.tasks.unshift({
@@ -349,7 +358,11 @@ const App = {
         AppState.tasks.unshift({id:Date.now().toString(), name:input.value, projectId:projectId, duration:15, locations:[], priority:'Moyenne', status:'todo', subtasks:[], note:''});
         AppState.showProjectAddTaskModal = null; this.save();
     },
-    
+    addSubtask(taskId){
+        const input = document.getElementById(`task-quick-subtask-${taskId}`); if(!input || !input.value.trim()) return;
+        AppState.tasks = AppState.tasks.map(t => t.id === taskId ? {...t, subtasks: [...(t.subtasks||[]), {id: Date.now().toString(), name:input.value, duration: 15, locations: [], priority: 'Moyenne', status: 'todo', note: ''}]} : t);
+        AppState.showProjectAddSubtaskModal = null; this.save();
+    },
     addProject(){
         const name=document.getElementById('new-proj-name').value; if(!name.trim()) return;
         AppState.projects.push({id:Date.now().toString(), name, categoryId:document.getElementById('new-proj-category').value || null, note:''});
@@ -662,7 +675,41 @@ const App = {
     // ==========================================
     // 4. RENDU VISUEL (HTML COMPONENTS)
     // ==========================================
-    
+    renderAuth() {
+        return `
+        <div class="flex flex-col items-center justify-center min-h-screen px-6 bg-[#0D0F12]">
+            <div class="w-full max-w-sm bg-[#1A1D24] p-8 rounded-3xl border border-gray-800 shadow-2xl">
+                <div class="flex justify-center mb-6">
+                    <div class="p-4 bg-cyan-500/20 rounded-full border border-cyan-500/30">
+                        <i data-lucide="zap" class="w-8 h-8 text-cyan-400 fill-cyan-400"></i>
+                    </div>
+                </div>
+                <h2 class="text-2xl font-black text-center text-white mb-2">${AppState.authMode === 'login' ? 'Connexion' : 'Créer un compte'}</h2>
+                <p class="text-sm text-gray-500 text-center mb-8">OS de Vie Cloud</p>
+                
+                ${AppState.authError ? `<div class="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-400 text-center font-bold">${AppState.authError}</div>` : ''}
+
+                <form onsubmit="App.handleAuth(event)" class="space-y-4">
+                    <div>
+                        <input type="email" id="auth-email" placeholder="Email" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <input type="password" id="auth-password" placeholder="Mot de passe" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none">
+                    </div>
+                    <button type="submit" class="w-full py-3 mt-2 rounded-xl bg-cyan-500 text-black font-bold uppercase hover:bg-cyan-400 transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+                        ${AppState.authMode === 'login' ? 'Se connecter' : 'S\'inscrire'}
+                    </button>
+                </form>
+                <div class="mt-6 text-center">
+                    <button onclick="App.toggleAuthMode()" class="text-xs text-gray-500 hover:text-cyan-400">
+                        ${AppState.authMode === 'login' ? 'Pas de compte ? Crées-en un ici.' : 'Déjà un compte ? Connecte-toi.'}
+                    </button>
+                </div>
+            </div>
+        </div>
+        `;
+    },
+
     renderTask(task, minimal=false, parentId=null, parentName=null){
         const isDone = task.status === 'done'; const isSubtask = parentId !== null; const type = isSubtask ? 'subtask' : 'task';
         const argParent = isSubtask ? `, '${parentId}'` : '';
@@ -1006,7 +1053,20 @@ const App = {
 
     renderSettings() {
         const renderList = (type, placeholder, isNumber) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Filtres' : '<i data-lucide="tag" class="text-indigo-400 w-4 h-4"></i> Catégories'}</h3><div class="flex gap-2 mb-4"><input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}', ${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
-        return `<div class="space-y-4"><div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>${renderList('times', 'Ex: 45', true)}${renderList('locations', 'Ex: Garage, Fatigue...', false)}<div class="mt-8 mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.5.1 (Modal & Moteur Fix)</span></div></div>`;
+        return `
+        <div class="space-y-4">
+            <div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>
+            ${renderList('times', 'Ex: 45', true)}
+            ${renderList('locations', 'Ex: Garage, Fatigue...', false)}
+            
+            <div class="mt-8 mb-4">
+                <button onclick="App.logout()" class="w-full py-4 rounded-xl bg-red-500/10 text-red-500 font-bold border border-red-500/30 hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center gap-2">
+                    <i data-lucide="log-out" class="w-5 h-5"></i> Se déconnecter
+                </button>
+            </div>
+            
+            <div class="mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.6.0 (Comptes Sécurisés)</span></div>
+        </div>`;
     },
     
     // ==========================================
@@ -1014,6 +1074,20 @@ const App = {
     // ==========================================
     render() {
         const content = document.getElementById('app-content');
+        
+        // Si l'utilisateur n'est pas connecté, on affiche QUE l'écran de connexion
+        if (!AppState.currentUser) {
+            document.querySelector('nav')?.remove(); // Retire la barre du bas si elle est là
+            content.innerHTML = this.renderAuth();
+            lucide.createIcons();
+            return;
+        }
+
+        // --- AFFICHAGE NORMAL DE L'APP ---
+        if (!document.querySelector('nav')) {
+            document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 py-4 flex justify-around items-center z-20 pb-8"><button onclick="App.setTab('home')" id="nav-home" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="play-circle"></i><span class="text-[9px] font-bold tracking-wider uppercase">Action</span></button><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[9px] font-bold tracking-wider uppercase">Chantiers</span></button><button onclick="App.setTab('planning')" id="nav-planning" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="calendar"></i><span class="text-[9px] font-bold tracking-wider uppercase">Plan</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[9px] font-bold tracking-wider uppercase">Paramètres</span></button></nav>`);
+        }
+
         if (AppState.activeTab === 'home') content.innerHTML = this.renderHome();
         else if (AppState.activeTab === 'planning') content.innerHTML = this.renderPlanning();
         else if (AppState.activeTab === 'projects') content.innerHTML = this.renderProjects();
@@ -1122,7 +1196,7 @@ const App = {
         lucide.createIcons();
     },
     
-    async init() {
+    init() {
         const header = document.querySelector('header');
         const container = document.getElementById('app-container');
         if (header && container) {
@@ -1134,35 +1208,44 @@ const App = {
         document.getElementById('app-content').innerHTML = `
             <div class="flex flex-col items-center justify-center h-full text-cyan-500">
                 <i data-lucide="cloud-cog" class="w-12 h-12 animate-pulse mb-4"></i>
-                <span class="text-sm font-bold tracking-widest uppercase">Synchronisation...</span>
+                <span class="text-sm font-bold tracking-widest uppercase">Connexion...</span>
             </div>
         `;
         lucide.createIcons();
 
-        try {
-            const docRef = doc(db, "osdevie", "donnees_principales");
-            const docSnap = await getDoc(docRef);
+        // ÉCOUTEUR D'AUTHENTIFICATION FIREBASE
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                // Utilisateur connecté
+                AppState.currentUser = user;
+                try {
+                    const docRef = doc(db, "users", user.uid);
+                    const docSnap = await getDoc(docRef);
 
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                AppState.categories = data.categories || [];
-                AppState.projects = data.projects || [];
-                AppState.tasks = data.tasks || [];
-                AppState.settings = data.settings || AppState.settings;
-                AppState.availabilities = data.availabilities || [];
-                AppState.draftSchedule = data.draftSchedule || null;
-                AppState.validatedSchedule = data.validatedSchedule || null;
-                AppState.bufferPercent = data.bufferPercent || 85;
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        AppState.categories = data.categories || [];
+                        AppState.projects = data.projects || [];
+                        AppState.tasks = data.tasks || [];
+                        AppState.settings = data.settings || AppState.settings;
+                        AppState.availabilities = data.availabilities || [];
+                        AppState.draftSchedule = data.draftSchedule || null;
+                        AppState.validatedSchedule = data.validatedSchedule || null;
+                        AppState.bufferPercent = data.bufferPercent || 85;
+                    } else {
+                        // Cas où l'utilisateur n'a pas encore de document Cloud. On pousse les données locales s'il y en a.
+                        await this.saveToCloud();
+                    }
+                } catch (e) {
+                    console.error("Mode hors-ligne, utilisation des données locales de secours.", e);
+                }
+                this.render();
             } else {
-                console.log("Première synchro Cloud ! On envoie tes données...");
-                await this.saveToCloud();
+                // Aucun utilisateur connecté, on affiche l'écran de connexion
+                AppState.currentUser = null;
+                this.render();
             }
-        } catch (e) {
-            console.error("Mode hors-ligne, utilisation des données locales de secours.", e);
-        }
-
-        document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 py-4 flex justify-around items-center z-20 pb-8"><button onclick="App.setTab('home')" id="nav-home" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="play-circle"></i><span class="text-[9px] font-bold tracking-wider uppercase">Action</span></button><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[9px] font-bold tracking-wider uppercase">Chantiers</span></button><button onclick="App.setTab('planning')" id="nav-planning" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="calendar"></i><span class="text-[9px] font-bold tracking-wider uppercase">Plan</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[9px] font-bold tracking-wider uppercase">Paramètres</span></button></nav>`);
-        this.render();
+        });
     }
 };
 
