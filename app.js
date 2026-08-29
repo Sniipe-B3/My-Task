@@ -19,28 +19,43 @@ const db = getFirestore(firebaseApp);
 const auth = getAuth(firebaseApp);
 
 // ==========================================
-// 1. CONFIGURATION DES MISES À JOUR (MODIFIE ICI)
+// 1. CONFIGURATION DES MISES À JOUR (HISTORIQUE)
 // ==========================================
-const APP_VERSION = "1.6.4";
-const RELEASE_NOTES = `
-<b>V1.6.4 - Changement de Nom & UI</b><br>
-• 🏷️ OS de Vie devient officiellement <b>My Task</b> !<br>
-• 👁️ L'œil du mot de passe n'efface plus le texte tapé.<br>
-• 🧹 Nettoyage de l'interface (Paramètres et Action).<br>
-<br>
-<i>V1.6.3 - PWA Plein Écran</i><br>
-• 📱 L'application s'installe nativement sur l'écran d'accueil sans barre de recherche (Plus d'erreur 500).<br>
-<br>
-<i>V1.6.2 - Confort</i><br>
-• 👀 Bouton pour afficher/masquer le mot de passe.<br>
-• 📢 Fenêtre des nouveautés au démarrage.<br>
-<br>
-<i>V1.6.1 - Oubli de MDP</i><br>
-• 🔒 Ajout de la réinitialisation par email.<br>
-<br>
-<i>V1.6.0 - Sécurité</i><br>
-• ☁️ Synchronisation Cloud via compte privé Firebase.
-`;
+// ⚠️ Ajoute toujours ta nouvelle mise à jour TOUT EN HAUT de cette liste !
+const RELEASE_HISTORY = [
+    {
+        version: "1.6.4.1",
+        title: "Nouveautés Intelligentes",
+        notes: "• 🧠 Affichage dynamique des mises à jour (uniquement ce que vous n'avez pas encore vu).<br>• 🐛 L'historique complet reste accessible dans les paramètres."
+    },
+    {
+        version: "1.6.4",
+        title: "Changement de Nom & UI",
+        notes: "• 🏷️ OS de Vie devient officiellement <b>My Task</b> !<br>• 👁️ L'œil du mot de passe n'efface plus le texte tapé.<br>• 🧹 Nettoyage de l'interface (Paramètres et Action)."
+    },
+    {
+        version: "1.6.3",
+        title: "PWA Plein Écran",
+        notes: "• 📱 L'application s'installe nativement sur l'écran d'accueil sans barre de recherche (Plus d'erreur 500)."
+    },
+    {
+        version: "1.6.2",
+        title: "Confort",
+        notes: "• 👀 Bouton pour afficher/masquer le mot de passe.<br>• 📢 Fenêtre des nouveautés au démarrage."
+    },
+    {
+        version: "1.6.1",
+        title: "Oubli de MDP",
+        notes: "• 🔒 Ajout de la réinitialisation par email."
+    },
+    {
+        version: "1.6.0",
+        title: "Sécurité",
+        notes: "• ☁️ Synchronisation Cloud via compte privé Firebase."
+    }
+];
+
+const APP_VERSION = RELEASE_HISTORY[0].version; // Prend automatiquement la version la plus haute
 
 // ==========================================
 // 2. DONNÉES INITIALES 
@@ -78,7 +93,9 @@ const AppState = {
     
     activeMenu: null, deletePrompt: null, editPrompt: null, notePrompt: null,
     taskModal: null,
-    showUpdateModal: false
+    
+    updateModalMode: null, // 'unseen' (nouveautés) ou 'all' (historique complet)
+    lastSeenVersion: null
 };
 
 // ==========================================
@@ -126,12 +143,9 @@ const App = {
 
     togglePasswordVisibility() {
         AppState.showPassword = !AppState.showPassword;
-        // Manipulation directe du DOM pour ne pas effacer le champ en rechargeant tout l'écran
         const pwdInput = document.getElementById('auth-password');
         const btn = document.getElementById('toggle-pwd-btn');
-        if (pwdInput) {
-            pwdInput.type = AppState.showPassword ? 'text' : 'password';
-        }
+        if (pwdInput) { pwdInput.type = AppState.showPassword ? 'text' : 'password'; }
         if (btn) {
             btn.innerHTML = `<i data-lucide="${AppState.showPassword ? 'eye-off' : 'eye'}" class="w-5 h-5"></i>`;
             lucide.createIcons();
@@ -197,8 +211,14 @@ const App = {
     setTab(tab) { AppState.activeTab = tab; this.render(); },
 
     // --- GESTION DES NOUVEAUTÉS ---
-    openUpdateModal() { AppState.showUpdateModal = true; this.render(); },
-    closeUpdateModal() { AppState.showUpdateModal = false; this.render(); },
+    openUpdateModal(mode = 'all') { 
+        AppState.updateModalMode = mode; 
+        this.render(); 
+    },
+    closeUpdateModal() { 
+        AppState.updateModalMode = null; 
+        this.render(); 
+    },
 
     // --- GESTION DES PARAMÈTRES ---
     addSetting(type, inputId) {
@@ -984,7 +1004,7 @@ const App = {
 
         return `
         <div class="space-y-8">
-            <section class="bg-[#1A1D24] rounded-3xl p-5 border border-gray-800/50 relative">
+            <section class="bg-[#1A1D24] rounded-3xl p-5 border border-gray-800/50">
                 <h2 class="text-lg font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="play" class="text-cyan-400 fill-cyan-400 w-5 h-5"></i> Moteur d'Action</h2>
                 <div class="space-y-4">
                     <div><label class="text-xs font-semibold text-gray-400 uppercase mb-2 block">Temps dispo (min)</label>
@@ -1116,7 +1136,7 @@ const App = {
             ${renderList('locations', 'Ex: Garage, Fatigue...', false)}
             
             <div class="mt-8 space-y-3 mb-4">
-                <button onclick="App.openUpdateModal()" class="w-full py-4 rounded-xl bg-cyan-500/10 text-cyan-400 font-bold border border-cyan-500/30 hover:bg-cyan-500 hover:text-black transition-colors flex items-center justify-center gap-2">
+                <button onclick="App.openUpdateModal('all')" class="w-full py-4 rounded-xl bg-cyan-500/10 text-cyan-400 font-bold border border-cyan-500/30 hover:bg-cyan-500 hover:text-black transition-colors flex items-center justify-center gap-2">
                     <i data-lucide="sparkles" class="w-5 h-5"></i> Nouveautés (v${APP_VERSION})
                 </button>
                 
@@ -1158,16 +1178,40 @@ const App = {
             document.getElementById('app-container').appendChild(modalContainer); 
         }
         
-        if (AppState.showUpdateModal) {
+        // FENÊTRE DES NOUVEAUTÉS (INTÉLLIGENTE)
+        if (AppState.updateModalMode) {
+            let htmlContent = '';
+            let title = AppState.updateModalMode === 'unseen' ? 'Depuis votre dernière visite...' : 'Historique des Mises à jour';
+            
+            for (let release of RELEASE_HISTORY) {
+                if (AppState.updateModalMode === 'unseen' && release.version === AppState.lastSeenVersion) {
+                    break; // On s'arrête dès qu'on croise la dernière version vue
+                }
+                htmlContent += `
+                <div class="mb-5 pb-4 border-b border-gray-800 last:border-0 last:pb-0">
+                    <span class="text-cyan-400 font-black tracking-widest text-xs uppercase mb-1 block">V${release.version} - ${release.title}</span>
+                    <div class="text-gray-400 leading-relaxed">${release.notes}</div>
+                </div>`;
+            }
+            
+            // Si le cache a été vidé ou tout nouvel utilisateur, on montre juste la dernière MAJ
+            if (htmlContent === '' || (!AppState.lastSeenVersion && AppState.updateModalMode === 'unseen')) {
+                htmlContent = `
+                <div class="mb-5 pb-4 border-b border-gray-800 last:border-0 last:pb-0">
+                    <span class="text-cyan-400 font-black tracking-widest text-xs uppercase mb-1 block">V${RELEASE_HISTORY[0].version} - ${RELEASE_HISTORY[0].title}</span>
+                    <div class="text-gray-400 leading-relaxed">${RELEASE_HISTORY[0].notes}</div>
+                </div>`;
+            }
+
             modalContainer.innerHTML = `
                 <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4" onclick="App.closeUpdateModal()">
                     <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
-                        <div class="flex justify-between items-center mb-4">
-                            <h3 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="sparkles" class="text-cyan-400"></i> Nouveautés</h3>
-                            <button onclick="App.closeUpdateModal()" class="text-gray-500 hover:text-white transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-lg font-black text-white flex items-center gap-2"><i data-lucide="sparkles" class="text-cyan-400"></i> ${title}</h3>
+                            <button onclick="App.closeUpdateModal()" class="text-gray-500 hover:text-white transition-colors p-1"><i data-lucide="x" class="w-5 h-5"></i></button>
                         </div>
-                        <div class="text-sm text-gray-300 space-y-2 max-h-60 overflow-y-auto pr-2" style="scrollbar-width: thin; scrollbar-color: #374151 transparent;">
-                            ${RELEASE_NOTES}
+                        <div class="text-sm space-y-2 max-h-[60vh] overflow-y-auto pr-2" style="scrollbar-width: thin; scrollbar-color: #374151 transparent;">
+                            ${htmlContent}
                         </div>
                         <button onclick="App.closeUpdateModal()" class="w-full mt-6 py-4 rounded-xl bg-cyan-500 text-black font-bold uppercase tracking-wider hover:bg-cyan-400 transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]">Génial !</button>
                     </div>
@@ -1312,7 +1356,8 @@ const App = {
                 
                 const lastSeenVersion = localStorage.getItem('osdevie_last_seen_version');
                 if (lastSeenVersion !== APP_VERSION) {
-                    AppState.showUpdateModal = true;
+                    AppState.lastSeenVersion = lastSeenVersion;
+                    AppState.updateModalMode = 'unseen';
                     localStorage.setItem('osdevie_last_seen_version', APP_VERSION);
                 }
 
