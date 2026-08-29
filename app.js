@@ -3,7 +3,7 @@
 // ==========================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyDInKtDR1g58e7OXkK3AgMROUXbHOdY7MU",
@@ -28,9 +28,10 @@ const getDefaultCategories = () => ([{ id: 'c1', name: 'Business', note: '' }, {
 // 2. ÉTAT GLOBAL DE L'APPLICATION
 // ==========================================
 const AppState = {
-    currentUser: null, // Stocke l'utilisateur Firebase connecté
-    authMode: 'login', // 'login' ou 'register' pour l'écran d'accueil
+    currentUser: null, 
+    authMode: 'login', 
     authError: '',
+    authMessage: '', // Nouveau : Message de succès (ex: email envoyé)
 
     activeTab: 'planning',
     settings: getDefaultSettings(),
@@ -66,6 +67,7 @@ const App = {
         const email = document.getElementById('auth-email').value;
         const password = document.getElementById('auth-password').value;
         AppState.authError = '';
+        AppState.authMessage = '';
         this.render();
 
         try {
@@ -73,7 +75,6 @@ const App = {
                 await signInWithEmailAndPassword(auth, email, password);
             } else {
                 await createUserWithEmailAndPassword(auth, email, password);
-                // Si nouveau compte, on initialise des données de base
                 AppState.settings = getDefaultSettings();
                 AppState.categories = getDefaultCategories();
                 AppState.projects = [];
@@ -92,13 +93,37 @@ const App = {
     toggleAuthMode() {
         AppState.authMode = AppState.authMode === 'login' ? 'register' : 'login';
         AppState.authError = '';
+        AppState.authMessage = '';
         this.render();
+    },
+
+    // NOUVEAUTÉ : Réinitialisation du mot de passe
+    async resetPassword() {
+        const email = document.getElementById('auth-email').value.trim();
+        if (!email) {
+            AppState.authError = "Veuillez taper votre adresse email d'abord.";
+            AppState.authMessage = '';
+            this.render();
+            return;
+        }
+
+        try {
+            await sendPasswordResetEmail(auth, email);
+            AppState.authError = '';
+            AppState.authMessage = "Email de réinitialisation envoyé ! Vérifiez vos spams.";
+            this.render();
+        } catch (error) {
+            AppState.authMessage = '';
+            AppState.authError = error.message.includes('user-not-found') || error.message.includes('invalid-email') 
+                ? "Aucun compte trouvé avec cet email." 
+                : "Erreur lors de l'envoi de l'email.";
+            this.render();
+        }
     },
 
     async logout() {
         if(confirm("Veux-tu vraiment te déconnecter ?")) {
             await signOut(auth);
-            // On vide les données locales par sécurité
             AppState.currentUser = null;
             AppState.categories = []; AppState.projects = []; AppState.tasks = []; AppState.availabilities = [];
             this.render();
@@ -107,7 +132,7 @@ const App = {
 
     // --- SYNCHRONISATION ---
     async saveToCloud() {
-        if (!AppState.currentUser) return; // Sécurité
+        if (!AppState.currentUser) return; 
 
         const dataToSave = {
             categories: AppState.categories,
@@ -120,7 +145,6 @@ const App = {
             bufferPercent: AppState.bufferPercent
         };
         try {
-            // Sauvegarde dans users/ID_UTILISATEUR (Totalement privé)
             await setDoc(doc(db, "users", AppState.currentUser.uid), dataToSave);
         } catch (e) {
             console.error("Erreur de sauvegarde Cloud:", e);
@@ -128,7 +152,6 @@ const App = {
     },
 
     save() {
-        // Optionnel : tu pourrais garder une sauvegarde Locale par utilisateur ici si besoin de mode hors ligne poussé
         this.render();
         this.saveToCloud();
     },
@@ -260,7 +283,7 @@ const App = {
         }
     },
 
-    // --- ANCIENS MENUS (Dossiers et Projets) ---
+    // --- MENUS (Dossiers et Projets) ---
     openMenu(e, type, id, parentId = null) { 
         if (e) { e.preventDefault(); e.stopPropagation(); } 
         if (type === 'task' || type === 'subtask') {
@@ -688,6 +711,7 @@ const App = {
                 <p class="text-sm text-gray-500 text-center mb-8">OS de Vie Cloud</p>
                 
                 ${AppState.authError ? `<div class="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-400 text-center font-bold">${AppState.authError}</div>` : ''}
+                ${AppState.authMessage ? `<div class="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-400 text-center font-bold">${AppState.authMessage}</div>` : ''}
 
                 <form onsubmit="App.handleAuth(event)" class="space-y-4">
                     <div>
@@ -695,6 +719,7 @@ const App = {
                     </div>
                     <div>
                         <input type="password" id="auth-password" placeholder="Mot de passe" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none">
+                        ${AppState.authMode === 'login' ? `<button type="button" onclick="App.resetPassword()" class="text-[10px] text-gray-500 hover:text-cyan-400 mt-2 block w-full text-right transition-colors">Mot de passe oublié ?</button>` : ''}
                     </div>
                     <button type="submit" class="w-full py-3 mt-2 rounded-xl bg-cyan-500 text-black font-bold uppercase hover:bg-cyan-400 transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]">
                         ${AppState.authMode === 'login' ? 'Se connecter' : 'S\'inscrire'}
@@ -1065,7 +1090,7 @@ const App = {
                 </button>
             </div>
             
-            <div class="mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.6.0 (Comptes Sécurisés)</span></div>
+            <div class="mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.6.1 (Password Reset)</span></div>
         </div>`;
     },
     
@@ -1075,15 +1100,13 @@ const App = {
     render() {
         const content = document.getElementById('app-content');
         
-        // Si l'utilisateur n'est pas connecté, on affiche QUE l'écran de connexion
         if (!AppState.currentUser) {
-            document.querySelector('nav')?.remove(); // Retire la barre du bas si elle est là
+            document.querySelector('nav')?.remove(); 
             content.innerHTML = this.renderAuth();
             lucide.createIcons();
             return;
         }
 
-        // --- AFFICHAGE NORMAL DE L'APP ---
         if (!document.querySelector('nav')) {
             document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 py-4 flex justify-around items-center z-20 pb-8"><button onclick="App.setTab('home')" id="nav-home" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="play-circle"></i><span class="text-[9px] font-bold tracking-wider uppercase">Action</span></button><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[9px] font-bold tracking-wider uppercase">Chantiers</span></button><button onclick="App.setTab('planning')" id="nav-planning" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="calendar"></i><span class="text-[9px] font-bold tracking-wider uppercase">Plan</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[9px] font-bold tracking-wider uppercase">Paramètres</span></button></nav>`);
         }
@@ -1196,7 +1219,7 @@ const App = {
         lucide.createIcons();
     },
     
-    init() {
+    async init() {
         const header = document.querySelector('header');
         const container = document.getElementById('app-container');
         if (header && container) {
@@ -1213,10 +1236,8 @@ const App = {
         `;
         lucide.createIcons();
 
-        // ÉCOUTEUR D'AUTHENTIFICATION FIREBASE
         onAuthStateChanged(auth, async (user) => {
             if (user) {
-                // Utilisateur connecté
                 AppState.currentUser = user;
                 try {
                     const docRef = doc(db, "users", user.uid);
@@ -1233,7 +1254,6 @@ const App = {
                         AppState.validatedSchedule = data.validatedSchedule || null;
                         AppState.bufferPercent = data.bufferPercent || 85;
                     } else {
-                        // Cas où l'utilisateur n'a pas encore de document Cloud. On pousse les données locales s'il y en a.
                         await this.saveToCloud();
                     }
                 } catch (e) {
@@ -1241,7 +1261,6 @@ const App = {
                 }
                 this.render();
             } else {
-                // Aucun utilisateur connecté, on affiche l'écran de connexion
                 AppState.currentUser = null;
                 this.render();
             }
