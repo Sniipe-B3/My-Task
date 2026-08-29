@@ -23,29 +23,24 @@ const auth = getAuth(firebaseApp);
 // ==========================================
 const RELEASE_HISTORY = [
     {
+        version: "1.7.3",
+        title: "Navigation & Notes",
+        notes: "• 📝 Les notes ont désormais leur propre fenêtre d'affichage (cliquez sur l'icône jaune).<br>• 🖱️ Fin des clics accidentels : pour modifier une tâche, utilisez les 3 petits points."
+    },
+    {
         version: "1.7.2",
         title: "Historique & Calendrier Interactif",
-        notes: "• 📜 L'historique complet des mises à jour s'affiche correctement dans les paramètres.<br>• ✅ Ajout des cases à cocher pour valider les tâches directement depuis le calendrier.<br>• 📝 Retour de la petite icône 'note' quand une tâche possède une description."
+        notes: "• 📜 L'historique complet des mises à jour s'affiche correctement.<br>• ✅ Ajout des cases à cocher pour valider les tâches dans le calendrier.<br>• 📝 Retour de l'icône 'note'."
     },
     {
         version: "1.7.1",
         title: "Correctifs Calendrier & UI",
-        notes: "• 🐛 Correction de la fenêtre des nouveautés qui ne s'ouvrait plus.<br>• 🗓️ Le calendrier affiche désormais les mois et permet de scroller sur 90 jours.<br>• 🗑️ Ajout d'un bouton pour effacer la planification d'une tâche."
+        notes: "• 🐛 Correction de la fenêtre des nouveautés.<br>• 🗓️ Le calendrier affiche désormais les mois et permet de scroller sur 90 jours.<br>• 🗑️ Ajout d'un bouton pour effacer la planification d'une tâche."
     },
     {
         version: "1.7.0",
         title: "Le Calendrier & Timeblocking",
-        notes: "• 📅 Nouvel onglet Calendrier : Naviguez de jour en jour avec une timeline chronologique de la journée.<br>• ⏰ Planification précise : Fixez une date et une heure directement depuis la fiche tâche.<br>• 🤖 Créneaux intelligents : Dessinez un bloc de temps libre dans le calendrier et laissez l'algorithme le remplir.<br>• 🧹 Nettoyage auto : Les tâches planifiées non terminées à l'heure dite retournent automatiquement dans la Base."
-    },
-    {
-        version: "1.6.4.1",
-        title: "Nouveautés Intelligentes",
-        notes: "• 🧠 Affichage dynamique des mises à jour (uniquement ce que vous n'avez pas encore vu)."
-    },
-    {
-        version: "1.6.4",
-        title: "Changement de Nom & UI",
-        notes: "• 🏷️ OS de Vie devient officiellement <b>My Task</b> !"
+        notes: "• 📅 Nouvel onglet Calendrier : Naviguez avec une timeline chronologique de la journée.<br>• ⏰ Planification précise depuis la fiche tâche.<br>• 🤖 Créneaux intelligents : Dessinez un bloc de temps libre et laissez l'algorithme le remplir."
     }
 ];
 
@@ -88,6 +83,7 @@ const AppState = {
     
     activeMenu: null, deletePrompt: null, editPrompt: null, notePrompt: null,
     taskModal: null,
+    taskNoteView: null, // NOUVEAU: Pour lire la note uniquement
     availabilityModal: false,
     
     showUpdateModal: false,
@@ -281,6 +277,31 @@ const App = {
     toggleAddProject() { AppState.showAddProject = !AppState.showAddProject; this.render(); },
     toggleAddCategory() { AppState.showAddCategory = !AppState.showAddCategory; this.render(); },
 
+    // --- GESTION DES NOTES (NOUVEAU) ---
+    openTaskNoteView(id, parentId = null) {
+        let itemData = parentId ? AppState.tasks.find(t => t.id === parentId).subtasks.find(s => s.id === id) : AppState.tasks.find(t => t.id === id);
+        AppState.taskNoteView = { id, parentId, note: itemData.note };
+        this.render();
+    },
+    closeTaskNoteView() {
+        AppState.taskNoteView = null;
+        this.render();
+    },
+    deleteTaskNote() {
+        if(confirm("Effacer cette note ?")) {
+            const { id, parentId } = AppState.taskNoteView;
+            if (parentId) AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, note: '' } : s) } : t);
+            else AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, note: '' } : t);
+            AppState.taskNoteView = null;
+            this.save();
+        }
+    },
+    editTaskNote() {
+        const { id, parentId } = AppState.taskNoteView;
+        AppState.taskNoteView = null;
+        this.openTaskModal(id, parentId);
+    },
+
     // --- FICHE TÂCHE UNIFIÉE ---
     openNewTaskModal(projectId = null) {
         const defDate = AppState.activeTab === 'calendar' ? AppState.selectedDate : null;
@@ -339,25 +360,21 @@ const App = {
         AppState.taskModal = null; this.save();
     },
 
-    deleteFromTaskModal() {
-        const { id, parentId } = AppState.taskModal;
-        if (confirm("Supprimer définitivement cette tâche ?")) {
-            if (parentId) AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.filter(s => s.id !== id) } : t);
-            else AppState.tasks = AppState.tasks.filter(t => t.id !== id);
-            AppState.taskModal = null; this.save();
-        }
-    },
-
-    // --- ANCIENS MENUS (Dossiers et Projets) ---
+    // --- MENUS UNIFIÉS ---
     openMenu(e, type, id, parentId = null) { 
         if (e) { e.preventDefault(); e.stopPropagation(); } 
-        if (type === 'task' || type === 'subtask') { this.openTaskModal(id, parentId); return; }
-        AppState.activeMenu = { type, id, parentId }; this.render(); 
+        AppState.activeMenu = { type, id, parentId }; 
+        this.render(); 
     },
     closeMenu() { AppState.activeMenu = null; this.render(); },
     
     openEdit() {
-        const { type, id } = AppState.activeMenu;
+        const { type, id, parentId } = AppState.activeMenu;
+        if (type === 'task' || type === 'subtask') {
+            AppState.activeMenu = null;
+            this.openTaskModal(id, parentId);
+            return;
+        }
         let itemData = type === 'category' ? AppState.categories.find(c => c.id === id) : AppState.projects.find(p => p.id === id);
         AppState.editPrompt = { type, id, parentId: null, data: JSON.parse(JSON.stringify(itemData)) };
         AppState.activeMenu = null; this.render();
@@ -392,16 +409,24 @@ const App = {
         AppState.editPrompt = null; this.save();
     },
 
-    openDelete() { AppState.deletePrompt = { ...AppState.activeMenu }; AppState.activeMenu = null; this.render(); },
+    openDelete() { 
+        const { type, id, parentId } = AppState.activeMenu;
+        AppState.deletePrompt = { type, id, parentId }; 
+        AppState.activeMenu = null; 
+        this.render(); 
+    },
     cancelDelete() { AppState.deletePrompt = null; this.render(); },
     confirmDelete() {
-        const { type, id } = AppState.deletePrompt;
+        const { type, id, parentId } = AppState.deletePrompt;
         if (type === 'category') {
             AppState.categories = AppState.categories.filter(c => c.id !== id);
             AppState.projects.forEach(p => { if (p.categoryId === id) p.categoryId = null; });
         } else if (type === 'project') { 
             AppState.projects = AppState.projects.filter(p => p.id !== id); 
             AppState.tasks = AppState.tasks.filter(t => t.projectId !== id); 
+        } else if (type === 'task' || type === 'subtask') {
+            if (parentId) AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.filter(s => s.id !== id) } : t);
+            else AppState.tasks = AppState.tasks.filter(t => t.id !== id);
         }
         AppState.deletePrompt = null; this.save();
     },
@@ -609,16 +634,16 @@ const App = {
     },
 
     renderTask(task, minimal=false, parentId=null, parentName=null){
-        const isDone = task.status === 'done'; const isSubtask = parentId !== null;
+        const isDone = task.status === 'done'; const isSubtask = parentId !== null; const type = isSubtask ? 'subtask' : 'task';
         const argParent = isSubtask ? `, '${parentId}'` : '';
         const priorityColors = {'Urgence':'text-red-400 bg-red-500/10 border-red-500/30', 'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
         const hasLocations = task.locations && task.locations.length > 0;
         let projectName = ''; if (task.projectId) { const proj = AppState.projects.find(p => p.id === task.projectId); if (proj) projectName = proj.name; }
 
         return `
-        <div onclick="App.openTaskModal('${task.id}'${argParent}); event.stopPropagation();" class="group flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all duration-300 border ${isDone?'bg-[#13161c] border-gray-800/30 opacity-60':'bg-[#1A1D24] border-gray-800 hover:border-gray-700'}">
+        <div draggable="true" ondragstart="App.handleDragStart(event, '${task.id}', '${type}'${argParent})" ondragend="App.handleDragEnd(event)" ondragover="App.handleDragOver(event)" ondragleave="App.handleDragLeave(event)" ondrop="App.handleDrop(event, '${task.id}', '${type}'${argParent})" class="draggable-item group flex items-center justify-between p-4 rounded-2xl transition-all duration-300 border ${isDone?'bg-[#13161c] border-gray-800/30 opacity-60':'bg-[#1A1D24] border-gray-800 hover:border-gray-700'}">
             <div class="flex items-center gap-4 overflow-hidden flex-1">
-                <button onclick="${isSubtask ? `App.toggleSubtask('${parentId}','${task.id}')` : `App.toggleTask('${task.id}')`}; event.stopPropagation();" class="shrink-0 focus:outline-none cursor-pointer p-1 -ml-1">
+                <button onclick="${isSubtask ? `App.toggleSubtask('${parentId}','${task.id}')` : `App.toggleTask('${task.id}')`};" class="shrink-0 focus:outline-none cursor-pointer p-1 -ml-1">
                     ${isDone?'<i data-lucide="check-circle-2" class="text-emerald-500"></i>':'<i data-lucide="circle" class="text-gray-600"></i>'}
                 </button>
                 <div class="flex-1 min-w-0">
@@ -628,13 +653,16 @@ const App = {
                         ${hasLocations ? `<span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3 text-emerald-400"></i> ${task.locations.join(', ')}</span>` : ''}
                         <span class="px-2 py-0.5 rounded-md text-[10px] border font-bold ${priorityColors[task.priority || 'Moyenne']}">${task.priority || 'Moyenne'}</span>
                         ${task.scheduledDate ? `<span class="flex items-center gap-1 text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/30"><i data-lucide="calendar" class="w-3 h-3"></i> ${task.scheduledDate.substring(5)}</span>` : ''}
-                        ${task.note && task.note.trim() !== '' ? `<span class="flex items-center text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
+                        ${task.note && task.note.trim() !== '' ? `<span onclick="App.openTaskNoteView('${task.id}'${argParent});" class="flex items-center text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer hover:bg-amber-500/20 transition-colors"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
                     </div>
                     ${projectName && !isSubtask ? `<div class="text-[10px] text-indigo-400/70 font-semibold flex items-center gap-1 mt-1 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Tâche de : ${projectName}</div>` : ''}
                     ${isSubtask && parentName ? `<div class="text-[10px] text-indigo-400/70 font-semibold flex items-center gap-1 mt-1 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Sous-tâche de : ${parentName}</div>` : ''}
                 </div>
             </div>
-            ${!isDone ? `<i data-lucide="chevron-right" class="w-5 h-5 text-gray-600"></i>` : ''}
+            <div class="flex items-center gap-1 shrink-0 ml-2">
+                ${minimal && !isSubtask ? `<button onclick="App.openNewSubtaskModal('${task.id}');" class="p-2 text-gray-400 hover:text-cyan-400"><i data-lucide="plus" class="w-4 h-4"></i></button>` : ''}
+                <button onclick="App.openMenu(event, '${type}', '${task.id}'${argParent});" class="p-2 text-gray-500 hover:text-cyan-400 rounded-lg"><i data-lucide="more-vertical" class="w-4 h-4"></i></button>
+            </div>
         </div>`;
     },
 
@@ -716,21 +744,24 @@ const App = {
                     timelineHtml += `
                     <div class="relative pl-6 pb-2">
                         <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-cyan-500 border border-[#0D0F12]'}"></div>
-                        <div class="bg-[#1A1D24] p-3 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} cursor-pointer hover:border-gray-700 transition-colors" onclick="App.openTaskModal('${ev.id}'${ev.isSubtask ? `, '${ev.parentId}'` : ''})">
+                        <div class="bg-[#1A1D24] p-3 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} transition-colors">
                             <div class="flex justify-between items-start mb-1">
                                 <div class="flex items-center gap-2">
-                                    <button onclick="event.stopPropagation(); ${ev.isSubtask ? `App.toggleSubtask('${ev.parentId}','${ev.id}')` : `App.toggleTask('${ev.id}')`}" class="p-1 -ml-1 text-gray-500 hover:text-emerald-400 focus:outline-none">
+                                    <button onclick="${ev.isSubtask ? `App.toggleSubtask('${ev.parentId}','${ev.id}')` : `App.toggleTask('${ev.id}')`}" class="p-1 -ml-1 text-gray-500 hover:text-emerald-400 focus:outline-none">
                                         <i data-lucide="${isDone ? 'check-circle-2' : 'circle'}" class="w-4 h-4 ${isDone ? 'text-emerald-500' : ''}"></i>
                                     </button>
                                     <span class="text-xs font-black text-cyan-400 ${isDone ? 'text-gray-500 line-through' : ''}">${timeDisp}</span>
                                 </div>
-                                <span class="px-1.5 py-0.5 rounded text-[8px] border bg-[#0D0F12] ${priorityColors[ev.priority || 'Moyenne']}">${ev.priority || 'Moyenne'}</span>
+                                <div class="flex items-center gap-2">
+                                    <span class="px-1.5 py-0.5 rounded text-[8px] border bg-[#0D0F12] ${priorityColors[ev.priority || 'Moyenne']}">${ev.priority || 'Moyenne'}</span>
+                                    <button onclick="App.openMenu(event, '${ev.isSubtask ? 'subtask' : 'task'}', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})" class="text-gray-500 hover:text-cyan-400 p-1 -mr-1"><i data-lucide="more-vertical" class="w-4 h-4"></i></button>
+                                </div>
                             </div>
                             <h4 class="text-sm font-bold text-white ${isDone ? 'line-through text-gray-500' : ''} ml-1">${ev.name}</h4>
                             <div class="flex items-center gap-2 mt-1.5 text-[10px] text-gray-500 ml-1">
                                 <span><i data-lucide="clock" class="w-3 h-3 inline"></i> ${ev.duration}m</span>
                                 ${ev.locations && ev.locations.length > 0 ? `<span class="text-emerald-400"><i data-lucide="map-pin" class="w-3 h-3 inline"></i> ${ev.locations.join(', ')}</span>` : ''}
-                                ${ev.note && ev.note.trim() !== '' ? `<span class="text-amber-400"><i data-lucide="file-text" class="w-3 h-3 inline"></i></span>` : ''}
+                                ${ev.note && ev.note.trim() !== '' ? `<span onclick="App.openTaskNoteView('${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})" class="text-amber-400 cursor-pointer bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 hover:bg-amber-500/20 transition-colors"><i data-lucide="file-text" class="w-3 h-3 inline"></i></span>` : ''}
                             </div>
                             ${ev.isSubtask && ev.parentName ? `<div class="text-[9px] text-indigo-400/70 font-semibold mt-1 ml-1"><i data-lucide="corner-down-right" class="w-3 h-3 inline"></i> ${ev.parentName}</div>` : ''}
                         </div>
@@ -1003,6 +1034,19 @@ const App = {
                     </div>
                 </div>
             `;
+        } else if (AppState.taskNoteView) {
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4" onclick="App.closeTaskNoteView()">
+                    <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
+                        <h3 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="file-text" class="text-amber-400"></i> Note</h3>
+                        <div class="text-sm text-gray-300 whitespace-pre-wrap mb-6 max-h-[50vh] overflow-y-auto bg-[#0D0F12] p-4 rounded-xl border border-gray-800">${AppState.taskNoteView.note}</div>
+                        <div class="flex gap-3">
+                            <button onclick="App.deleteTaskNote()" class="flex-1 py-3 rounded-xl bg-[#0D0F12] text-red-500 font-bold border border-gray-800 hover:border-red-500/50 transition-colors">Effacer</button>
+                            <button onclick="App.editTaskNote()" class="flex-1 py-3 rounded-xl bg-amber-500 text-black font-bold hover:bg-amber-400 transition-colors">Modifier</button>
+                        </div>
+                    </div>
+                </div>
+            `;
         } else if (AppState.availabilityModal) {
             modalContainer.innerHTML = `
                 <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeAvailabilityModal()">
@@ -1100,7 +1144,20 @@ const App = {
                     </div>
                 </div>`;
         } else if (AppState.activeMenu) {
-            modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeMenu()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><div class="p-2 border-b border-gray-800/50"><button onclick="App.openEdit()" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="pencil" class="text-cyan-400 w-5 h-5"></i> Renommer</button><button onclick="App.openNote('${AppState.activeMenu.type}', '${AppState.activeMenu.id}')" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="file-text" class="text-amber-400 w-5 h-5"></i> Gérer la note</button><button onclick="App.openDelete()" class="w-full text-left px-6 py-4 text-red-500 font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="trash-2" class="w-5 h-5"></i> Supprimer</button></div><div class="p-2"><button onclick="App.closeMenu()" class="w-full text-center px-6 py-4 text-gray-500 font-bold hover:bg-[#1f232b] rounded-2xl">Annuler</button></div></div></div>`;
+            const isTask = AppState.activeMenu.type === 'task' || AppState.activeMenu.type === 'subtask';
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeMenu()">
+                    <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
+                        <div class="p-2 border-b border-gray-800/50">
+                            <button onclick="App.openEdit()" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="pencil" class="text-cyan-400 w-5 h-5"></i> ${isTask ? 'Modifier la tâche' : 'Renommer'}</button>
+                            ${!isTask ? `<button onclick="App.openNote('${AppState.activeMenu.type}', '${AppState.activeMenu.id}')" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="file-text" class="text-amber-400 w-5 h-5"></i> Gérer la note</button>` : ''}
+                            <button onclick="App.openDelete()" class="w-full text-left px-6 py-4 text-red-500 font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="trash-2" class="w-5 h-5"></i> Supprimer</button>
+                        </div>
+                        <div class="p-2">
+                            <button onclick="App.closeMenu()" class="w-full text-center px-6 py-4 text-gray-500 font-bold hover:bg-[#1f232b] rounded-2xl">Annuler</button>
+                        </div>
+                    </div>
+                </div>`;
         } else if (AppState.notePrompt) {
             modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeNote()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><h3 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="file-text" class="text-amber-400"></i> Note</h3><form onsubmit="App.saveNote(event)" class="space-y-4"><textarea id="edit-note-text" rows="6" class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-amber-500 focus:outline-none placeholder-gray-600">${AppState.notePrompt.note}</textarea><div class="flex gap-3 mt-4"><button type="button" onclick="App.closeNote()" class="flex-1 py-3 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button><button type="submit" class="flex-1 py-3 rounded-xl bg-amber-500 text-black font-bold">Enregistrer</button></div></form></div></div>`;
         } else if (AppState.editPrompt) {
@@ -1117,7 +1174,7 @@ const App = {
                     </div>
                 </div>`;
         } else if (AppState.deletePrompt) {
-            let typeName = AppState.deletePrompt.type === 'category' ? 'ce dossier (les projets à l\'intérieur iront dans "Sans dossier")' : 'ce projet';
+            let typeName = AppState.deletePrompt.type === 'category' ? 'ce dossier (les projets à l\'intérieur iront dans "Sans dossier")' : (AppState.deletePrompt.type === 'project' ? 'ce projet' : 'cette tâche');
             modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.cancelDelete()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mb-6"></div><h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2"><i data-lucide="trash-2" class="text-red-500"></i> Supprimer ${typeName} ?</h3><p class="text-gray-400 text-sm mb-8">Cette action est définitive.</p><div class="flex gap-3"><button onclick="App.cancelDelete()" class="flex-1 py-4 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button><button onclick="App.confirmDelete()" class="flex-1 py-4 rounded-xl bg-red-500/10 text-red-500 font-bold border border-red-500/50">Supprimer</button></div></div></div>`;
         } else { 
             modalContainer.innerHTML = ''; 
