@@ -21,11 +21,19 @@ const auth = getAuth(firebaseApp);
 // ==========================================
 // 1. CONFIGURATION DES MISES À JOUR (MODIFIE ICI)
 // ==========================================
-const APP_VERSION = "1.6.2";
+const APP_VERSION = "1.6.4";
 const RELEASE_NOTES = `
-<b>V1.6.2 - Nouveautés & Confort</b><br>
-• 👀 Ajout d'un bouton pour afficher/masquer le mot de passe.<br>
-• 📢 Fenêtre des nouveautés au démarrage et dans les paramètres.<br>
+<b>V1.6.4 - Changement de Nom & UI</b><br>
+• 🏷️ OS de Vie devient officiellement <b>My Task</b> !<br>
+• 👁️ L'œil du mot de passe n'efface plus le texte tapé.<br>
+• 🧹 Nettoyage de l'interface (Paramètres et Action).<br>
+<br>
+<i>V1.6.3 - PWA Plein Écran</i><br>
+• 📱 L'application s'installe nativement sur l'écran d'accueil sans barre de recherche (Plus d'erreur 500).<br>
+<br>
+<i>V1.6.2 - Confort</i><br>
+• 👀 Bouton pour afficher/masquer le mot de passe.<br>
+• 📢 Fenêtre des nouveautés au démarrage.<br>
 <br>
 <i>V1.6.1 - Oubli de MDP</i><br>
 • 🔒 Ajout de la réinitialisation par email.<br>
@@ -48,7 +56,7 @@ const AppState = {
     authMode: 'login', 
     authError: '',
     authMessage: '', 
-    showPassword: false, // NOUVEAU : Gère l'affichage de l'œil du MDP
+    showPassword: false, 
 
     activeTab: 'planning',
     settings: getDefaultSettings(),
@@ -70,7 +78,7 @@ const AppState = {
     
     activeMenu: null, deletePrompt: null, editPrompt: null, notePrompt: null,
     taskModal: null,
-    showUpdateModal: false // NOUVEAU : Fenêtre des nouveautés
+    showUpdateModal: false
 };
 
 // ==========================================
@@ -112,12 +120,22 @@ const App = {
         AppState.authMode = AppState.authMode === 'login' ? 'register' : 'login';
         AppState.authError = '';
         AppState.authMessage = '';
+        AppState.showPassword = false;
         this.render();
     },
 
     togglePasswordVisibility() {
         AppState.showPassword = !AppState.showPassword;
-        this.render();
+        // Manipulation directe du DOM pour ne pas effacer le champ en rechargeant tout l'écran
+        const pwdInput = document.getElementById('auth-password');
+        const btn = document.getElementById('toggle-pwd-btn');
+        if (pwdInput) {
+            pwdInput.type = AppState.showPassword ? 'text' : 'password';
+        }
+        if (btn) {
+            btn.innerHTML = `<i data-lucide="${AppState.showPassword ? 'eye-off' : 'eye'}" class="w-5 h-5"></i>`;
+            lucide.createIcons();
+        }
     },
 
     async resetPassword() {
@@ -718,7 +736,7 @@ const App = {
                     </div>
                 </div>
                 <h2 class="text-2xl font-black text-center text-white mb-2">${AppState.authMode === 'login' ? 'Connexion' : 'Créer un compte'}</h2>
-                <p class="text-sm text-gray-500 text-center mb-8">OS de Vie Cloud</p>
+                <p class="text-sm text-gray-500 text-center mb-8">My Task Cloud</p>
                 
                 ${AppState.authError ? `<div class="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-400 text-center font-bold">${AppState.authError}</div>` : ''}
                 ${AppState.authMessage ? `<div class="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-400 text-center font-bold">${AppState.authMessage}</div>` : ''}
@@ -729,7 +747,7 @@ const App = {
                     </div>
                     <div class="relative">
                         <input type="${AppState.showPassword ? 'text' : 'password'}" id="auth-password" placeholder="Mot de passe" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none pr-12">
-                        <button type="button" onclick="App.togglePasswordVisibility()" class="absolute right-4 top-3.5 text-gray-500 hover:text-cyan-400 focus:outline-none">
+                        <button type="button" id="toggle-pwd-btn" onclick="App.togglePasswordVisibility()" class="absolute right-4 top-3.5 text-gray-500 hover:text-cyan-400 focus:outline-none">
                             <i data-lucide="${AppState.showPassword ? 'eye-off' : 'eye'}" class="w-5 h-5"></i>
                         </button>
                     </div>
@@ -967,7 +985,6 @@ const App = {
         return `
         <div class="space-y-8">
             <section class="bg-[#1A1D24] rounded-3xl p-5 border border-gray-800/50 relative">
-                <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-emerald-500"></div>
                 <h2 class="text-lg font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="play" class="text-cyan-400 fill-cyan-400 w-5 h-5"></i> Moteur d'Action</h2>
                 <div class="space-y-4">
                     <div><label class="text-xs font-semibold text-gray-400 uppercase mb-2 block">Temps dispo (min)</label>
@@ -1095,22 +1112,20 @@ const App = {
         <div class="space-y-4">
             <div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>
             
-            <div class="mt-4 mb-8">
-                <button onclick="App.openUpdateModal()" class="w-full py-4 rounded-xl bg-cyan-500/10 text-cyan-400 font-bold border border-cyan-500/30 hover:bg-cyan-500 hover:text-black transition-colors flex items-center justify-center gap-2">
-                    <i data-lucide="sparkles" class="w-5 h-5"></i> Nouveautés (v${APP_VERSION})
-                </button>
-            </div>
-
             ${renderList('times', 'Ex: 45', true)}
             ${renderList('locations', 'Ex: Garage, Fatigue...', false)}
             
-            <div class="mt-8 mb-4">
+            <div class="mt-8 space-y-3 mb-4">
+                <button onclick="App.openUpdateModal()" class="w-full py-4 rounded-xl bg-cyan-500/10 text-cyan-400 font-bold border border-cyan-500/30 hover:bg-cyan-500 hover:text-black transition-colors flex items-center justify-center gap-2">
+                    <i data-lucide="sparkles" class="w-5 h-5"></i> Nouveautés (v${APP_VERSION})
+                </button>
+                
                 <button onclick="App.logout()" class="w-full py-4 rounded-xl bg-red-500/10 text-red-500 font-bold border border-red-500/30 hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center gap-2">
                     <i data-lucide="log-out" class="w-5 h-5"></i> Se déconnecter
                 </button>
             </div>
             
-            <div class="mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v${APP_VERSION}</span></div>
+            <div class="mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">My Task v${APP_VERSION}</span></div>
         </div>`;
     },
     
@@ -1295,7 +1310,6 @@ const App = {
                     console.error("Mode hors-ligne, utilisation des données locales de secours.", e);
                 }
                 
-                // VÉRIFICATION DE NOUVELLE VERSION POUR AFFICHER LA FENÊTRE
                 const lastSeenVersion = localStorage.getItem('osdevie_last_seen_version');
                 if (lastSeenVersion !== APP_VERSION) {
                     AppState.showUpdateModal = true;
