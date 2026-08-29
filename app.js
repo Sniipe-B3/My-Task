@@ -23,6 +23,11 @@ const auth = getAuth(firebaseApp);
 // ==========================================
 const RELEASE_HISTORY = [
     {
+        version: "1.7.2",
+        title: "Historique & Calendrier Interactif",
+        notes: "• 📜 L'historique complet des mises à jour s'affiche correctement dans les paramètres.<br>• ✅ Ajout des cases à cocher pour valider les tâches directement depuis le calendrier.<br>• 📝 Retour de la petite icône 'note' quand une tâche possède une description."
+    },
+    {
         version: "1.7.1",
         title: "Correctifs Calendrier & UI",
         notes: "• 🐛 Correction de la fenêtre des nouveautés qui ne s'ouvrait plus.<br>• 🗓️ Le calendrier affiche désormais les mois et permet de scroller sur 90 jours.<br>• 🗑️ Ajout d'un bouton pour effacer la planification d'une tâche."
@@ -299,7 +304,6 @@ const App = {
     },
     closeTaskModal() { AppState.taskModal = null; this.render(); },
     
-    // NOUVEAU: Permet de vider rapidement la date et l'heure
     clearTaskSchedule() {
         const dateInput = document.getElementById('modal-task-date');
         const timeInput = document.getElementById('modal-task-time');
@@ -343,17 +347,66 @@ const App = {
             AppState.taskModal = null; this.save();
         }
     },
-    
-    // --- ACTIONS TÂCHES ---
-    toggleTask(taskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,status:t.status==='todo'?'done':'todo'} : t); if(AppState.homeSearched) this.generateAction(); this.save(); },
-    toggleSubtask(taskId,subtaskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,subtasks:t.subtasks.map(s=>s.id===subtaskId ? {...s,status:s.status==='todo'?'done':'todo'} : s)} : t); this.save(); },
-    addProjectTask(projectId){
-        const input = document.getElementById(`project-quick-task-${projectId}`); if(!input || !input.value.trim()) return;
-        AppState.tasks.unshift({id:Date.now().toString(), name:input.value, projectId:projectId, duration:15, locations:[], priority:'Moyenne', status:'todo', subtasks:[], note:'', scheduledDate: null, scheduledTime: null});
-        AppState.showProjectAddTaskModal = null; this.save();
+
+    // --- ANCIENS MENUS (Dossiers et Projets) ---
+    openMenu(e, type, id, parentId = null) { 
+        if (e) { e.preventDefault(); e.stopPropagation(); } 
+        if (type === 'task' || type === 'subtask') { this.openTaskModal(id, parentId); return; }
+        AppState.activeMenu = { type, id, parentId }; this.render(); 
     },
+    closeMenu() { AppState.activeMenu = null; this.render(); },
     
-    // --- STYLES & FORMULAIRES ---
+    openEdit() {
+        const { type, id } = AppState.activeMenu;
+        let itemData = type === 'category' ? AppState.categories.find(c => c.id === id) : AppState.projects.find(p => p.id === id);
+        AppState.editPrompt = { type, id, parentId: null, data: JSON.parse(JSON.stringify(itemData)) };
+        AppState.activeMenu = null; this.render();
+    },
+    closeEdit() { AppState.editPrompt = null; this.render(); },
+    
+    openNote(type, id) {
+        let itemData = type === 'category' ? AppState.categories.find(c => c.id === id) : AppState.projects.find(p => p.id === id);
+        AppState.notePrompt = { type, id, parentId: null, note: itemData.note || '' };
+        AppState.activeMenu = null; this.render();
+    },
+    closeNote() { AppState.notePrompt = null; this.render(); },
+    
+    saveNote(event) {
+        event.preventDefault();
+        const { type, id } = AppState.notePrompt;
+        const noteText = document.getElementById('edit-note-text').value;
+        if (type === 'category') AppState.categories = AppState.categories.map(c => c.id === id ? { ...c, note: noteText } : c);
+        else if (type === 'project') AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, note: noteText } : p);
+        AppState.notePrompt = null; this.save();
+    },
+
+    saveEdit(event) {
+        event.preventDefault(); 
+        const { type, id } = AppState.editPrompt;
+        const name = document.getElementById('edit-name').value;
+        if (type === 'category') {
+            AppState.categories = AppState.categories.map(c => c.id === id ? { ...c, name } : c);
+        } else if (type === 'project') {
+            AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, name, categoryId: document.getElementById('edit-proj-category').value || null } : p);
+        }
+        AppState.editPrompt = null; this.save();
+    },
+
+    openDelete() { AppState.deletePrompt = { ...AppState.activeMenu }; AppState.activeMenu = null; this.render(); },
+    cancelDelete() { AppState.deletePrompt = null; this.render(); },
+    confirmDelete() {
+        const { type, id } = AppState.deletePrompt;
+        if (type === 'category') {
+            AppState.categories = AppState.categories.filter(c => c.id !== id);
+            AppState.projects.forEach(p => { if (p.categoryId === id) p.categoryId = null; });
+        } else if (type === 'project') { 
+            AppState.projects = AppState.projects.filter(p => p.id !== id); 
+            AppState.tasks = AppState.tasks.filter(t => t.projectId !== id); 
+        }
+        AppState.deletePrompt = null; this.save();
+    },
+
+    // --- SELECTIONS VISUELLES ---
     toggleFormLocation(btn) {
         btn.classList.toggle('loc-selected');
         if (btn.classList.contains('loc-selected')) { btn.classList.replace('bg-[#0D0F12]', 'bg-emerald-500/20'); btn.classList.replace('text-gray-500', 'text-emerald-400'); btn.classList.replace('border-transparent', 'border-emerald-500/50'); } 
@@ -370,6 +423,15 @@ const App = {
     setHomeTime(time) { AppState.homeTime=time; this.render(); },
     toggleHomeLocation(loc) { AppState.homeLocations.includes(loc) ? AppState.homeLocations = AppState.homeLocations.filter(l => l !== loc) : AppState.homeLocations.push(loc); this.render(); },
 
+    // --- ACTIONS TÂCHES ---
+    toggleTask(taskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,status:t.status==='todo'?'done':'todo'} : t); if(AppState.homeSearched) this.generateAction(); this.save(); },
+    toggleSubtask(taskId,subtaskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,subtasks:t.subtasks.map(s=>s.id===subtaskId ? {...s,status:s.status==='todo'?'done':'todo'} : s)} : t); this.save(); },
+    addProjectTask(projectId){
+        const input = document.getElementById(`project-quick-task-${projectId}`); if(!input || !input.value.trim()) return;
+        AppState.tasks.unshift({id:Date.now().toString(), name:input.value, projectId:projectId, duration:15, locations:[], priority:'Moyenne', status:'todo', subtasks:[], note:'', scheduledDate: null, scheduledTime: null});
+        AppState.showProjectAddTaskModal = null; this.save();
+    },
+    
     // --- ALGORITHMES ACTION DIRECTE ---
     getFlatActiveTasks() {
         let allActive = [];
@@ -428,7 +490,6 @@ const App = {
 
     // --- LE CALENDRIER ---
     selectDate(dateStr) { AppState.selectedDate = dateStr; this.render(); },
-    
     openAvailabilityModal() { AppState.availabilityModal = true; this.render(); },
     closeAvailabilityModal() { AppState.availabilityModal = false; this.render(); },
     
@@ -483,7 +544,6 @@ const App = {
 
         for (let i = 0; i < availableTasks.length; i++) {
             const task = availableTasks[i];
-            
             const numTask = parseInt(task.name);
             if (!isNaN(numTask) && numTask > 1) {
                 const prevTask = availableTasks.find(t => t.projectId === task.projectId && parseInt(t.name) === (numTask - 1));
@@ -568,6 +628,7 @@ const App = {
                         ${hasLocations ? `<span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3 text-emerald-400"></i> ${task.locations.join(', ')}</span>` : ''}
                         <span class="px-2 py-0.5 rounded-md text-[10px] border font-bold ${priorityColors[task.priority || 'Moyenne']}">${task.priority || 'Moyenne'}</span>
                         ${task.scheduledDate ? `<span class="flex items-center gap-1 text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/30"><i data-lucide="calendar" class="w-3 h-3"></i> ${task.scheduledDate.substring(5)}</span>` : ''}
+                        ${task.note && task.note.trim() !== '' ? `<span class="flex items-center text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
                     </div>
                     ${projectName && !isSubtask ? `<div class="text-[10px] text-indigo-400/70 font-semibold flex items-center gap-1 mt-1 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Tâche de : ${projectName}</div>` : ''}
                     ${isSubtask && parentName ? `<div class="text-[10px] text-indigo-400/70 font-semibold flex items-center gap-1 mt-1 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Sous-tâche de : ${parentName}</div>` : ''}
@@ -580,7 +641,6 @@ const App = {
     renderCalendar() {
         const priorityColors = {'Urgence':'text-red-400 border-red-500/30', 'Haute':'text-purple-400 border-purple-500/30','Moyenne':'text-amber-400 border-amber-500/30','Basse':'text-blue-400 border-blue-500/30'};
 
-        // Génération du bandeau de dates (J-3 à J+90)
         const dates = [];
         const todayDate = new Date();
         const startDay = new Date(todayDate); startDay.setDate(todayDate.getDate() - 3);
@@ -606,10 +666,8 @@ const App = {
         });
         datesHtml += `</div>`;
 
-        // Récupération des événements du jour
         let dayEvents = [];
         
-        // Tâches
         AppState.tasks.forEach(t => {
             if (t.scheduledDate === AppState.selectedDate) {
                 dayEvents.push({ ...t, type: 'task', isSubtask: false, parentName: null });
@@ -623,14 +681,12 @@ const App = {
             }
         });
 
-        // Créneaux libres
         AppState.availabilities.forEach(a => {
             if (a.date === AppState.selectedDate) {
                 dayEvents.push({ ...a, type: 'slot' });
             }
         });
 
-        // Tri chronologique
         dayEvents.sort((a,b) => {
             const timeA = a.type === 'task' ? (a.scheduledTime || '23:59') : a.start;
             const timeB = b.type === 'task' ? (b.scheduledTime || '23:59') : b.start;
@@ -639,7 +695,6 @@ const App = {
 
         let timelineHtml = `<div class="relative space-y-3 mt-2 pl-2 border-l border-gray-800">`;
 
-        // Ligne de l'heure actuelle
         if (AppState.selectedDate === getTodayString()) {
             const now = new Date();
             const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
@@ -659,19 +714,25 @@ const App = {
                     const isDone = ev.status === 'done';
                     const timeDisp = ev.scheduledTime || '--:--';
                     timelineHtml += `
-                    <div class="relative pl-6 pb-2" onclick="App.openTaskModal('${ev.id}'${ev.isSubtask ? `, '${ev.parentId}'` : ''})">
+                    <div class="relative pl-6 pb-2">
                         <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-cyan-500 border border-[#0D0F12]'}"></div>
-                        <div class="bg-[#1A1D24] p-3 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} cursor-pointer hover:border-gray-700 transition-colors">
+                        <div class="bg-[#1A1D24] p-3 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} cursor-pointer hover:border-gray-700 transition-colors" onclick="App.openTaskModal('${ev.id}'${ev.isSubtask ? `, '${ev.parentId}'` : ''})">
                             <div class="flex justify-between items-start mb-1">
-                                <span class="text-xs font-black text-cyan-400">${timeDisp}</span>
+                                <div class="flex items-center gap-2">
+                                    <button onclick="event.stopPropagation(); ${ev.isSubtask ? `App.toggleSubtask('${ev.parentId}','${ev.id}')` : `App.toggleTask('${ev.id}')`}" class="p-1 -ml-1 text-gray-500 hover:text-emerald-400 focus:outline-none">
+                                        <i data-lucide="${isDone ? 'check-circle-2' : 'circle'}" class="w-4 h-4 ${isDone ? 'text-emerald-500' : ''}"></i>
+                                    </button>
+                                    <span class="text-xs font-black text-cyan-400 ${isDone ? 'text-gray-500 line-through' : ''}">${timeDisp}</span>
+                                </div>
                                 <span class="px-1.5 py-0.5 rounded text-[8px] border bg-[#0D0F12] ${priorityColors[ev.priority || 'Moyenne']}">${ev.priority || 'Moyenne'}</span>
                             </div>
-                            <h4 class="text-sm font-bold text-white ${isDone ? 'line-through text-gray-500' : ''}">${ev.name}</h4>
-                            <div class="flex items-center gap-2 mt-1.5 text-[10px] text-gray-500">
+                            <h4 class="text-sm font-bold text-white ${isDone ? 'line-through text-gray-500' : ''} ml-1">${ev.name}</h4>
+                            <div class="flex items-center gap-2 mt-1.5 text-[10px] text-gray-500 ml-1">
                                 <span><i data-lucide="clock" class="w-3 h-3 inline"></i> ${ev.duration}m</span>
                                 ${ev.locations && ev.locations.length > 0 ? `<span class="text-emerald-400"><i data-lucide="map-pin" class="w-3 h-3 inline"></i> ${ev.locations.join(', ')}</span>` : ''}
+                                ${ev.note && ev.note.trim() !== '' ? `<span class="text-amber-400"><i data-lucide="file-text" class="w-3 h-3 inline"></i></span>` : ''}
                             </div>
-                            ${ev.isSubtask && ev.parentName ? `<div class="text-[9px] text-indigo-400/70 font-semibold mt-1"><i data-lucide="corner-down-right" class="w-3 h-3 inline"></i> ${ev.parentName}</div>` : ''}
+                            ${ev.isSubtask && ev.parentName ? `<div class="text-[9px] text-indigo-400/70 font-semibold mt-1 ml-1"><i data-lucide="corner-down-right" class="w-3 h-3 inline"></i> ${ev.parentName}</div>` : ''}
                         </div>
                     </div>`;
                 } else {
@@ -856,7 +917,7 @@ const App = {
             
             <div class="mt-8 space-y-3 mb-4">
                 <button onclick="App.openUpdateModal('all')" class="w-full py-4 rounded-xl bg-cyan-500/10 text-cyan-400 font-bold border border-cyan-500/30 hover:bg-cyan-500 hover:text-black transition-colors flex items-center justify-center gap-2">
-                    <i data-lucide="sparkles" class="w-5 h-5"></i> Historique des Mises à jour (v${APP_VERSION})
+                    <i data-lucide="sparkles" class="w-5 h-5"></i> Historique des MAJ (v${APP_VERSION})
                 </button>
                 
                 <button onclick="App.logout()" class="w-full py-4 rounded-xl bg-red-500/10 text-red-500 font-bold border border-red-500/30 hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center gap-2">
@@ -1115,7 +1176,6 @@ const App = {
                     console.error("Mode hors-ligne, utilisation des données locales de secours.", e);
                 }
                 
-                // Nettoyage Auto du calendrier
                 this.checkMissedTasks();
 
                 const lastSeenVersion = localStorage.getItem('osdevie_last_seen_version');
