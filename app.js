@@ -19,19 +19,36 @@ const db = getFirestore(firebaseApp);
 const auth = getAuth(firebaseApp);
 
 // ==========================================
-// 1. DONNÉES INITIALES (Création de compte)
+// 1. CONFIGURATION DES MISES À JOUR (MODIFIE ICI)
+// ==========================================
+const APP_VERSION = "1.6.2";
+const RELEASE_NOTES = `
+<b>V1.6.2 - Nouveautés & Confort</b><br>
+• 👀 Ajout d'un bouton pour afficher/masquer le mot de passe.<br>
+• 📢 Fenêtre des nouveautés au démarrage et dans les paramètres.<br>
+<br>
+<i>V1.6.1 - Oubli de MDP</i><br>
+• 🔒 Ajout de la réinitialisation par email.<br>
+<br>
+<i>V1.6.0 - Sécurité</i><br>
+• ☁️ Synchronisation Cloud via compte privé Firebase.
+`;
+
+// ==========================================
+// 2. DONNÉES INITIALES 
 // ==========================================
 const getDefaultSettings = () => ({ times: [15, 30, 60, 120], locations: ['Maison', 'Boulot', 'Ordi', 'Jardin'] });
 const getDefaultCategories = () => ([{ id: 'c1', name: 'Business', note: '' }, { id: 'c2', name: 'Famille', note: '' }]);
 
 // ==========================================
-// 2. ÉTAT GLOBAL DE L'APPLICATION
+// 3. ÉTAT GLOBAL DE L'APPLICATION
 // ==========================================
 const AppState = {
     currentUser: null, 
     authMode: 'login', 
     authError: '',
-    authMessage: '', // Nouveau : Message de succès (ex: email envoyé)
+    authMessage: '', 
+    showPassword: false, // NOUVEAU : Gère l'affichage de l'œil du MDP
 
     activeTab: 'planning',
     settings: getDefaultSettings(),
@@ -52,11 +69,12 @@ const AppState = {
     showProjectAddTaskModal: null, showProjectAddSubtaskModal: null,
     
     activeMenu: null, deletePrompt: null, editPrompt: null, notePrompt: null,
-    taskModal: null 
+    taskModal: null,
+    showUpdateModal: false // NOUVEAU : Fenêtre des nouveautés
 };
 
 // ==========================================
-// 3. MOTEUR DE L'APPLICATION
+// 4. MOTEUR DE L'APPLICATION
 // ==========================================
 const App = {
     lastTapTime: 0,
@@ -97,7 +115,11 @@ const App = {
         this.render();
     },
 
-    // NOUVEAUTÉ : Réinitialisation du mot de passe
+    togglePasswordVisibility() {
+        AppState.showPassword = !AppState.showPassword;
+        this.render();
+    },
+
     async resetPassword() {
         const email = document.getElementById('auth-email').value.trim();
         if (!email) {
@@ -106,7 +128,6 @@ const App = {
             this.render();
             return;
         }
-
         try {
             await sendPasswordResetEmail(auth, email);
             AppState.authError = '';
@@ -115,8 +136,7 @@ const App = {
         } catch (error) {
             AppState.authMessage = '';
             AppState.authError = error.message.includes('user-not-found') || error.message.includes('invalid-email') 
-                ? "Aucun compte trouvé avec cet email." 
-                : "Erreur lors de l'envoi de l'email.";
+                ? "Aucun compte trouvé avec cet email." : "Erreur lors de l'envoi de l'email.";
             this.render();
         }
     },
@@ -157,6 +177,10 @@ const App = {
     },
     
     setTab(tab) { AppState.activeTab = tab; this.render(); },
+
+    // --- GESTION DES NOUVEAUTÉS ---
+    openUpdateModal() { AppState.showUpdateModal = true; this.render(); },
+    closeUpdateModal() { AppState.showUpdateModal = false; this.render(); },
 
     // --- GESTION DES PARAMÈTRES ---
     addSetting(type, inputId) {
@@ -202,9 +226,7 @@ const App = {
     // --- FICHE TÂCHE UNIFIÉE (MODAL) ---
     openNewTaskModal(projectId = null) {
         AppState.taskModal = { 
-            id: Date.now().toString(), 
-            parentId: null, 
-            isNew: true,
+            id: Date.now().toString(), parentId: null, isNew: true,
             data: { name: '', projectId: projectId, duration: 15, locations: [], priority: 'Moyenne', note: '' } 
         };
         this.render();
@@ -212,9 +234,7 @@ const App = {
 
     openNewSubtaskModal(parentId) {
         AppState.taskModal = { 
-            id: Date.now().toString(), 
-            parentId: parentId, 
-            isNew: true,
+            id: Date.now().toString(), parentId: parentId, isNew: true,
             data: { name: '', duration: 15, locations: [], priority: 'Moyenne', note: '' } 
         };
         this.render();
@@ -258,9 +278,7 @@ const App = {
         } else { 
             const projectId = document.getElementById('modal-task-project').value || null;
             if (isNew) {
-                AppState.tasks.unshift({
-                    id, name, projectId, duration, locations, priority, note, status: 'todo', subtasks: []
-                });
+                AppState.tasks.unshift({ id, name, projectId, duration, locations, priority, note, status: 'todo', subtasks: [] });
             } else {
                 AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, locations, priority, note } : t);
             }
@@ -273,25 +291,18 @@ const App = {
     deleteFromTaskModal() {
         const { id, parentId } = AppState.taskModal;
         if (confirm("Supprimer définitivement cette tâche ?")) {
-            if (parentId) {
-                AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.filter(s => s.id !== id) } : t);
-            } else {
-                AppState.tasks = AppState.tasks.filter(t => t.id !== id);
-            }
+            if (parentId) { AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.filter(s => s.id !== id) } : t); } 
+            else { AppState.tasks = AppState.tasks.filter(t => t.id !== id); }
             AppState.taskModal = null;
             this.save();
         }
     },
 
-    // --- MENUS (Dossiers et Projets) ---
+    // --- ANCIENS MENUS (Dossiers et Projets) ---
     openMenu(e, type, id, parentId = null) { 
         if (e) { e.preventDefault(); e.stopPropagation(); } 
-        if (type === 'task' || type === 'subtask') {
-            this.openTaskModal(id, parentId);
-            return;
-        }
-        AppState.activeMenu = { type, id, parentId }; 
-        this.render(); 
+        if (type === 'task' || type === 'subtask') { this.openTaskModal(id, parentId); return; }
+        AppState.activeMenu = { type, id, parentId }; this.render(); 
     },
     closeMenu() { AppState.activeMenu = null; this.render(); },
     
@@ -413,7 +424,7 @@ const App = {
     setHomeTime(time) { AppState.homeTime=time; this.render(); },
     toggleHomeLocation(loc) { AppState.homeLocations.includes(loc) ? AppState.homeLocations = AppState.homeLocations.filter(l => l !== loc) : AppState.homeLocations.push(loc); this.render(); },
 
-    // --- DRAG & DROP GÉNÉRAL ---
+    // --- DRAG & DROP ---
     handleDragStart(e, id, type, parentId = null) { e.dataTransfer.setData('text/plain', JSON.stringify({id, type, parentId})); e.currentTarget.classList.add('dragging'); },
     handleDragEnd(e) { e.currentTarget.classList.remove('dragging'); document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over')); },
     handleDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); },
@@ -450,7 +461,6 @@ const App = {
         } catch(err) { console.error(err); }
     },
 
-    // --- DRAG & DROP SPÉCIFIQUE (Plan et Brouillon) ---
     handleScheduleDragStart(e, taskId, slotId) { e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'schedule-task', sourceSlot: slotId})); e.currentTarget.classList.add('opacity-50'); },
     handleScheduleDragEnd(e) { e.currentTarget.classList.remove('opacity-50'); },
     handleDraftDragStart(e, taskId, slotId) { e.dataTransfer.setData('text/plain', JSON.stringify({id: taskId, type: 'draft-task', sourceSlot: slotId})); e.currentTarget.classList.add('opacity-50'); },
@@ -696,7 +706,7 @@ const App = {
     resetSchedule() { AppState.validatedSchedule = null; AppState.draftSchedule = null; AppState.isEditingSchedule = false; this.save(); },
 
     // ==========================================
-    // 4. RENDU VISUEL (HTML COMPONENTS)
+    // 5. RENDU VISUEL (HTML COMPONENTS)
     // ==========================================
     renderAuth() {
         return `
@@ -717,11 +727,14 @@ const App = {
                     <div>
                         <input type="email" id="auth-email" placeholder="Email" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none">
                     </div>
-                    <div>
-                        <input type="password" id="auth-password" placeholder="Mot de passe" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none">
-                        ${AppState.authMode === 'login' ? `<button type="button" onclick="App.resetPassword()" class="text-[10px] text-gray-500 hover:text-cyan-400 mt-2 block w-full text-right transition-colors">Mot de passe oublié ?</button>` : ''}
+                    <div class="relative">
+                        <input type="${AppState.showPassword ? 'text' : 'password'}" id="auth-password" placeholder="Mot de passe" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none pr-12">
+                        <button type="button" onclick="App.togglePasswordVisibility()" class="absolute right-4 top-3.5 text-gray-500 hover:text-cyan-400 focus:outline-none">
+                            <i data-lucide="${AppState.showPassword ? 'eye-off' : 'eye'}" class="w-5 h-5"></i>
+                        </button>
                     </div>
-                    <button type="submit" class="w-full py-3 mt-2 rounded-xl bg-cyan-500 text-black font-bold uppercase hover:bg-cyan-400 transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+                    ${AppState.authMode === 'login' ? `<button type="button" onclick="App.resetPassword()" class="text-[10px] text-gray-500 hover:text-cyan-400 mt-2 block w-full text-right transition-colors">Mot de passe oublié ?</button>` : ''}
+                    <button type="submit" class="w-full py-3 mt-4 rounded-xl bg-cyan-500 text-black font-bold uppercase hover:bg-cyan-400 transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]">
                         ${AppState.authMode === 'login' ? 'Se connecter' : 'S\'inscrire'}
                     </button>
                 </form>
@@ -1081,6 +1094,13 @@ const App = {
         return `
         <div class="space-y-4">
             <div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>
+            
+            <div class="mt-4 mb-8">
+                <button onclick="App.openUpdateModal()" class="w-full py-4 rounded-xl bg-cyan-500/10 text-cyan-400 font-bold border border-cyan-500/30 hover:bg-cyan-500 hover:text-black transition-colors flex items-center justify-center gap-2">
+                    <i data-lucide="sparkles" class="w-5 h-5"></i> Nouveautés (v${APP_VERSION})
+                </button>
+            </div>
+
             ${renderList('times', 'Ex: 45', true)}
             ${renderList('locations', 'Ex: Garage, Fatigue...', false)}
             
@@ -1090,7 +1110,7 @@ const App = {
                 </button>
             </div>
             
-            <div class="mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v1.6.1 (Password Reset)</span></div>
+            <div class="mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">OS de Vie v${APP_VERSION}</span></div>
         </div>`;
     },
     
@@ -1123,7 +1143,22 @@ const App = {
             document.getElementById('app-container').appendChild(modalContainer); 
         }
         
-        if (AppState.taskModal) {
+        if (AppState.showUpdateModal) {
+            modalContainer.innerHTML = `
+                <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4" onclick="App.closeUpdateModal()">
+                    <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="sparkles" class="text-cyan-400"></i> Nouveautés</h3>
+                            <button onclick="App.closeUpdateModal()" class="text-gray-500 hover:text-white transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
+                        </div>
+                        <div class="text-sm text-gray-300 space-y-2 max-h-60 overflow-y-auto pr-2" style="scrollbar-width: thin; scrollbar-color: #374151 transparent;">
+                            ${RELEASE_NOTES}
+                        </div>
+                        <button onclick="App.closeUpdateModal()" class="w-full mt-6 py-4 rounded-xl bg-cyan-500 text-black font-bold uppercase tracking-wider hover:bg-cyan-400 transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]">Génial !</button>
+                    </div>
+                </div>
+            `;
+        } else if (AppState.taskModal) {
             const d = AppState.taskModal.data; 
             const dLocs = d.locations || [];
             modalContainer.innerHTML = `
@@ -1259,6 +1294,14 @@ const App = {
                 } catch (e) {
                     console.error("Mode hors-ligne, utilisation des données locales de secours.", e);
                 }
+                
+                // VÉRIFICATION DE NOUVELLE VERSION POUR AFFICHER LA FENÊTRE
+                const lastSeenVersion = localStorage.getItem('osdevie_last_seen_version');
+                if (lastSeenVersion !== APP_VERSION) {
+                    AppState.showUpdateModal = true;
+                    localStorage.setItem('osdevie_last_seen_version', APP_VERSION);
+                }
+
                 this.render();
             } else {
                 AppState.currentUser = null;
