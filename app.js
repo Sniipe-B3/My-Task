@@ -45,24 +45,19 @@ const RELEASE_HISTORY = [
     {
         version: "1.7.0",
         title: "Le Calendrier Chronologique",
-        notes: "• 📅 Nouvel onglet Calendrier avec timeline."
-    },
-    {
-        version: "1.6.4.1",
-        title: "Nouveautés Intelligentes",
-        notes: "• 🧠 Affichage dynamique des mises à jour (uniquement ce que vous n'avez pas encore vu)."
+        notes: "• 📅 Nouvel onglet Calendrier avec timeline et créneaux intelligents."
     },
     {
         version: "1.6.4",
         title: "Changement de Nom & UI",
         notes: "• 🏷️ OS de Vie devient officiellement <b>My Task</b> !"
     },
-{
+    {
         version: "1.6.3",
-        title: "PWA Plein Ecran",
+        title: "PWA Plein Écran",
         notes: "• 📱 L'application s'installe nativement sur l'écran d'accueil sans barre de recherche (Plus d'erreur 500)."
     },
-    {
+{
         version: "1.6.2",
         title: "Confort",
         notes: "• 👀 Bouton pour afficher/masquer le mot de passe.<br>• 📢 Fenêtre des nouveautés au démarrage."
@@ -101,8 +96,11 @@ const AppState = {
     settings: getDefaultSettings(), categories: [], projects: [], tasks: [], availabilities: [], 
     homeTime: 30, homeLocations: [], homeSuggestions: [], homeSearched: false,
     expandedCategoryIds: [], expandedProjectId: null, showAddProject: false, showAddCategory: false,
-    activeMenu: null, deletePrompt: null, editPrompt: null, notePrompt: null, taskModal: null, taskNoteView: null, 
-    availabilityModal: false, showUpdateModal: false, updateModalMode: null, lastSeenVersion: null, missedTasksNotif: [] 
+    
+    // UI Modals
+    activeMenu: null, deletePrompt: null, editPrompt: null, notePrompt: null, 
+    taskModal: null, taskNoteView: null, availabilityModal: false, 
+    showUpdateModal: false, updateModalMode: null, lastSeenVersion: null, missedTasksNotif: [] 
 };
 
 // ==========================================
@@ -254,7 +252,7 @@ const App = {
         AppState.taskModal = null; this.save();
     },
 
-    // --- MENUS UNIFIÉS ---
+    // --- MENUS UNIFIÉS & ÉDITION ---
     openMenu(e, type, id, parentId = null) { 
         if (e) { e.preventDefault(); e.stopPropagation(); } 
         AppState.activeMenu = { type, id, parentId }; this.render(); 
@@ -279,16 +277,28 @@ const App = {
         }
         AppState.deletePrompt = null; this.save();
     },
+    openNote(type, id) {
+        let itemData = type === 'category' ? AppState.categories.find(c => c.id === id) : AppState.projects.find(p => p.id === id);
+        AppState.notePrompt = { type, id, parentId: null, note: itemData.note || '' }; AppState.activeMenu = null; this.render();
+    },
+    closeNote() { AppState.notePrompt = null; this.render(); },
+    saveNote(event) {
+        event.preventDefault(); const { type, id } = AppState.notePrompt; const noteText = document.getElementById('edit-note-text').value;
+        if (type === 'category') AppState.categories = AppState.categories.map(c => c.id === id ? { ...c, note: noteText } : c);
+        else if (type === 'project') AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, note: noteText } : p);
+        AppState.notePrompt = null; this.save();
+    },
+    saveEdit(event) {
+        event.preventDefault(); const { type, id } = AppState.editPrompt; const name = document.getElementById('edit-name').value;
+        if (type === 'category') AppState.categories = AppState.categories.map(c => c.id === id ? { ...c, name } : c);
+        else if (type === 'project') AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, name, categoryId: document.getElementById('edit-proj-category').value || null } : p);
+        AppState.editPrompt = null; this.save();
+    },
 
-    // --- ACTIONS TÂCHES ---
-    toggleTask(taskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,status:t.status==='todo'?'done':'todo'} : t); if(AppState.homeSearched) this.generateAction(); this.save(); },
-    toggleSubtask(taskId,subtaskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,subtasks:t.subtasks.map(s=>s.id===subtaskId ? {...s,status:s.status==='todo'?'done':'todo'} : s)} : t); this.save(); },
-
-    // --- LE CALENDRIER & DRAG DROP ---
+    // --- LE CALENDRIER & DRAG DROP AVANCÉ ---
     selectDate(dateStr) { AppState.selectedDate = dateStr; this.render(); },
     openAvailabilityModal() { AppState.availabilityModal = true; this.render(); },
     closeAvailabilityModal() { AppState.availabilityModal = false; this.render(); },
-    
     addAvailability(event) {
         event.preventDefault(); const start = document.getElementById('plan-start').value; const end = document.getElementById('plan-end').value; const locations = this.getFormLocations(event.target);
         const [startH, startM] = start.split(':').map(Number); const [endH, endM] = end.split(':').map(Number);
@@ -303,6 +313,7 @@ const App = {
     
     handleCalDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('border-cyan-500', 'bg-cyan-900/20'); },
     handleCalDragLeave(e) { e.currentTarget.classList.remove('border-cyan-500', 'bg-cyan-900/20'); },
+    
     handleCalDrop(e, targetType, targetId, targetParentId = null) {
         e.preventDefault(); e.currentTarget.classList.remove('border-cyan-500', 'bg-cyan-900/20');
         try {
@@ -331,6 +342,7 @@ const App = {
         } catch(err) { console.error(err); }
     },
 
+    // --- AUTRES ALGORITHMES ---
     getFlatActiveTasks() {
         let allActive = [];
         AppState.tasks.forEach(t => {
@@ -342,6 +354,84 @@ const App = {
         });
         return allActive;
     },
+    fillAvailability(slotId) {
+        const slot = AppState.availabilities.find(a => a.id === slotId); if (!slot) return;
+        const priorityWeights={'Urgence':4, 'Haute':3,'Moyenne':2,'Basse':1};
+        let availableTasks = this.getFlatActiveTasks().filter(t => !t.scheduledDate); 
+
+        availableTasks.sort((a,b) => {
+            if (a.projectId && a.projectId === b.projectId) { const numA = parseInt(a.name); const numB = parseInt(b.name); if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB; }
+            const pA = priorityWeights[a.priority || 'Moyenne']; const pB = priorityWeights[b.priority || 'Moyenne']; if (pA !== pB) return pB - pA;
+            return (b.duration || 15) - (a.duration || 15);
+        });
+
+        let currentUsedTime = 0; let [currentH, currentM] = slot.start.split(':').map(Number); let tasksChanged = false;
+
+        for (let i = 0; i < availableTasks.length; i++) {
+            const task = availableTasks[i]; const numTask = parseInt(task.name);
+            if (!isNaN(numTask) && numTask > 1) { const prevTask = availableTasks.find(t => t.projectId === task.projectId && parseInt(t.name) === (numTask - 1)); if (prevTask) continue; }
+            if ((currentUsedTime + task.duration) <= slot.duration) {
+                let matchLoc = true;
+                if (slot.locations && slot.locations.length > 0) { matchLoc = (!task.locations || task.locations.length === 0) ? false : task.locations.some(l => slot.locations.includes(l)); }
+                if (matchLoc) {
+                    const timeStr = `${String(currentH).padStart(2,'0')}:${String(currentM).padStart(2,'0')}`;
+                    if (task.isSubtask) AppState.tasks = AppState.tasks.map(t => t.id === task.parentId ? { ...t, subtasks: t.subtasks.map(s => s.id === task.id ? { ...s, scheduledDate: slot.date, scheduledTime: timeStr } : s) } : t);
+                    else AppState.tasks = AppState.tasks.map(t => t.id === task.id ? { ...t, scheduledDate: slot.date, scheduledTime: timeStr } : t);
+                    currentUsedTime += task.duration; currentM += task.duration;
+                    while (currentM >= 60) { currentH += 1; currentM -= 60; }
+                    tasksChanged = true;
+                }
+            }
+        }
+        if (tasksChanged) { AppState.availabilities = AppState.availabilities.filter(a => a.id !== slotId); this.save(); } 
+        else { alert("Aucune tâche ne correspond aux filtres ou à la durée de ce créneau."); }
+    },
+    openUpdateModal(mode = 'all') { AppState.updateModalMode = mode; AppState.showUpdateModal = true; this.render(); },
+    closeUpdateModal() { AppState.updateModalMode = null; AppState.showUpdateModal = false; this.render(); },
+    addCategory() { const name = document.getElementById('new-cat-name').value; if (!name.trim()) return; AppState.categories.push({ id: 'c_' + Date.now(), name, note: '' }); AppState.showAddCategory = false; this.save(); },
+    toggleCategoryExpand(id) { AppState.expandedCategoryIds.includes(id) ? AppState.expandedCategoryIds = AppState.expandedCategoryIds.filter(cId => cId !== id) : AppState.expandedCategoryIds.push(id); this.render(); },
+    addProject(){ const name=document.getElementById('new-proj-name').value; if(!name.trim()) return; AppState.projects.push({id:Date.now().toString(), name, categoryId:document.getElementById('new-proj-category').value || null, note:''}); AppState.showAddProject=false; this.save(); },
+    goToProject(projectId) { AppState.expandedProjectId = projectId; const proj = AppState.projects.find(p => p.id === projectId); if (proj && proj.categoryId && !AppState.expandedCategoryIds.includes(proj.categoryId)) { AppState.expandedCategoryIds.push(proj.categoryId); } this.setTab('projects'); },
+    toggleProjectExpand(id) { AppState.expandedProjectId = AppState.expandedProjectId === id ? null : id; this.render(); },
+    toggleAddProject() { AppState.showAddProject = !AppState.showAddProject; this.render(); },
+    toggleAddCategory() { AppState.showAddCategory = !AppState.showAddCategory; this.render(); },
+    toggleFormLocation(btn) { btn.classList.toggle('loc-selected'); if (btn.classList.contains('loc-selected')) { btn.classList.replace('bg-[#0D0F12]', 'bg-emerald-500/20'); btn.classList.replace('text-gray-500', 'text-emerald-400'); btn.classList.replace('border-transparent', 'border-emerald-500/50'); } else { btn.classList.replace('bg-emerald-500/20', 'bg-[#0D0F12]'); btn.classList.replace('text-emerald-400', 'text-gray-500'); btn.classList.replace('border-emerald-500/50', 'border-transparent'); } },
+    getFormLocations(form) { return Array.from(form.querySelectorAll('.loc-selected')).map(b => b.getAttribute('data-loc')); },
+    applyPriorityStyle(btn, className) { btn.parentElement.querySelectorAll('button').forEach(b => { b.className = "flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold bg-[#0D0F12] text-gray-500 border border-transparent transition-colors"; }); const p = btn.innerText.trim(); let colors = p === 'Urgence' ? 'bg-red-500/20 text-red-400 border-red-500/50' : p === 'Haute' ? 'bg-purple-500/20 text-purple-400 border-purple-500/50' : p === 'Moyenne' ? 'bg-amber-500/20 text-amber-400 border-amber-500/50' : 'bg-blue-500/20 text-blue-400 border-blue-500/50'; btn.className = `flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold border transition-colors ${className} ${colors}`; },
+    selectModalPriority(btn) { this.applyPriorityStyle(btn, 'modal-priority-selected'); },
+    setHomeTime(time) { AppState.homeTime=time; this.render(); },
+    toggleHomeLocation(loc) { AppState.homeLocations.includes(loc) ? AppState.homeLocations = AppState.homeLocations.filter(l => l !== loc) : AppState.homeLocations.push(loc); this.render(); },
+    toggleTask(taskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,status:t.status==='todo'?'done':'todo'} : t); if(AppState.homeSearched) this.generateAction(); this.save(); },
+    toggleSubtask(taskId,subtaskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,subtasks:t.subtasks.map(s=>s.id===subtaskId ? {...s,status:s.status==='todo'?'done':'todo'} : s)} : t); this.save(); },
+    generateAction() {
+        const priorityWeights={'Urgence':4, 'Haute':3,'Moyenne':2,'Basse':1}; let allAvailable = [];
+        AppState.tasks.forEach(t => {
+            let hasActiveSubtasks = false;
+            if (t.subtasks && t.subtasks.length > 0) {
+                t.subtasks.forEach(s => {
+                    if (s.status !== 'done') {
+                        hasActiveSubtasks = true; const numSub = parseInt(s.name); let blocked = false;
+                        if (!isNaN(numSub) && numSub > 1) blocked = t.subtasks.some(otherS => parseInt(otherS.name) === (numSub - 1) && otherS.status !== 'done');
+                        if (!blocked && s.duration <= AppState.homeTime) {
+                            let matchLoc = AppState.homeLocations.length === 0 || (s.locations && s.locations.some(l => AppState.homeLocations.includes(l)));
+                            if (matchLoc) allAvailable.push({ ...s, isSubtask: true, parentId: t.id, parentName: t.name, projectId: t.projectId });
+                        }
+                    }
+                });
+            }
+            if (!hasActiveSubtasks && t.status !== 'done') {
+                const numTask = parseInt(t.name); let blocked = false;
+                if (!isNaN(numTask) && numTask > 1) blocked = AppState.tasks.some(otherT => otherT.projectId === t.projectId && parseInt(otherT.name) === (numTask - 1) && otherT.status !== 'done');
+                if (!blocked && t.duration <= AppState.homeTime) {
+                    let matchLoc = AppState.homeLocations.length === 0 || (t.locations && t.locations.some(l => AppState.homeLocations.includes(l)));
+                    if (matchLoc) allAvailable.push({ ...t, isSubtask: false, projectId: t.projectId });
+                }
+            }
+        });
+        allAvailable.sort((a,b)=> { const pA = priorityWeights[a.priority || 'Moyenne']; const pB = priorityWeights[b.priority || 'Moyenne']; if (pA !== pB) return pB - pA; const dA = a.duration || 15; const dB = b.duration || 15; if (dA !== dB) return dB - dA; if (a.isSubtask && !b.isSubtask) return -1; if (!a.isSubtask && b.isSubtask) return 1; return 0; });
+        AppState.homeSuggestions = allAvailable.slice(0,5); AppState.homeSearched=true; this.render();
+    },
+    // --- SUITE DU MOTEUR DE L'APPLICATION (Partie 2/2) ---
 
     // ==========================================
     // 5. RENDU VISUEL (HTML COMPONENTS)
@@ -373,8 +463,10 @@ const App = {
         const isDone = task.status === 'done'; const isSubtask = parentId !== null; const type = isSubtask ? 'subtask' : 'task';
         const argParent = isSubtask ? `, '${parentId}'` : ', null';
         const priorityColors = {'Urgence':'text-red-400 bg-red-500/10 border-red-500/30', 'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
+        const hasLocations = task.locations && task.locations.length > 0;
         let projectName = ''; if (task.projectId) { const proj = AppState.projects.find(p => p.id === task.projectId); if (proj) projectName = proj.name; }
 
+        // L'événement OnClick est placé sur toute la DIV (sauf les boutons spécifiques)
         return `
         <div draggable="true" ondragstart="App.handleDragStart(event, '${task.id}', '${type}'${argParent})" ondragend="App.handleDragEnd(event)" onclick="App.openMenu(event, '${type}', '${task.id}'${argParent});" class="group flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all duration-300 border ${isDone?'bg-[#13161c] border-gray-800/30 opacity-60':'bg-[#1A1D24] border-gray-800 hover:border-gray-700'}">
             <div class="flex items-center gap-4 overflow-hidden flex-1">
@@ -385,6 +477,7 @@ const App = {
                     <h4 class="font-bold truncate text-[15px] ${isDone?'text-gray-500 line-through':'text-gray-200'}">${task.name}</h4>
                     <div class="flex items-center gap-2 mt-1 text-xs font-semibold text-gray-500 flex-wrap">
                         <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ${task.duration}m</span>
+                        ${hasLocations ? `<span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3 text-emerald-400"></i> ${task.locations.join(', ')}</span>` : ''}
                         <span class="px-2 py-0.5 rounded-md text-[10px] border font-bold ${priorityColors[task.priority || 'Moyenne']}">${task.priority || 'Moyenne'}</span>
                         ${task.scheduledDate ? `<span class="flex items-center gap-1 text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/30"><i data-lucide="calendar" class="w-3 h-3"></i> ${task.scheduledDate.substring(5)}</span>` : ''}
                         ${task.note && task.note.trim() !== '' ? `<span onclick="App.openTaskNoteView('${task.id}'${argParent}); event.stopPropagation();" class="flex items-center text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer hover:bg-amber-500/20 transition-colors"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
@@ -401,6 +494,7 @@ const App = {
         const priorityColors = {'Urgence':'text-red-400 border-red-500/30', 'Haute':'text-purple-400 border-purple-500/30','Moyenne':'text-amber-400 border-amber-500/30','Basse':'text-blue-400 border-blue-500/30'};
         const dates = []; const todayDate = new Date(); const startDay = new Date(todayDate); startDay.setDate(todayDate.getDate() - 3);
         const months = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Aoû','Sep','Oct','Nov','Déc'];
+        
         for (let i=0; i<90; i++) {
             const d = new Date(startDay); d.setDate(startDay.getDate() + i);
             const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -416,8 +510,8 @@ const App = {
 
         let dayEvents = [];
         AppState.tasks.forEach(t => {
-            if (t.scheduledDate === AppState.selectedDate) dayEvents.push({ ...t, type: 'task', isSubtask: false });
-            if (t.subtasks) t.subtasks.forEach(s => { if (s.scheduledDate === AppState.selectedDate) dayEvents.push({ ...s, type: 'task', isSubtask: true, parentId: t.id, parentName: t.name }); });
+            if (t.scheduledDate === AppState.selectedDate) dayEvents.push({ ...t, type: 'task', isSubtask: false, parentName: null });
+            if (t.subtasks) t.subtasks.forEach(s => { if (s.scheduledDate === AppState.selectedDate) dayEvents.push({ ...s, type: 'task', isSubtask: true, parentId: t.id, parentName: t.name, projectId: t.projectId }); });
         });
         AppState.availabilities.forEach(a => { if (a.date === AppState.selectedDate) dayEvents.push({ ...a, type: 'slot' }); });
 
@@ -484,13 +578,12 @@ const App = {
         }
         timelineHtml += `</div>`;
 
-        // Section Drag & Drop : Tâches non planifiées
         let unscheduledHtml = '';
         let allUnscheduled = this.getFlatActiveTasks().filter(t => !t.scheduledDate);
         if (allUnscheduled.length > 0) {
             unscheduledHtml = `
             <div class="mt-8 bg-[#1A1D24] p-4 rounded-3xl border border-gray-800 shadow-xl">
-                <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2"><i data-lucide="mouse-pointer-click" class="w-4 h-4 text-cyan-400"></i> À planifier (Drag & Drop)</h3>
+                <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2"><i data-lucide="mouse-pointer-click" class="w-4 h-4 text-cyan-400"></i> À planifier (Glisser-Déposer)</h3>
                 <div class="space-y-2 max-h-64 overflow-y-auto pr-1" style="scrollbar-width: thin; scrollbar-color: #374151 transparent;">
                     ${allUnscheduled.map(t => this.renderTask(t, false, t.isSubtask ? t.parentId : null, t.isSubtask ? t.parentName : null)).join('')}
                 </div>
@@ -588,6 +681,7 @@ const App = {
         <div class="space-y-4">
             <div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2></div>
             ${renderList('times', 'Ex: 45', true)}
+            ${renderList('locations', 'Ex: Garage, Fatigue...', false)}
             <div class="mt-8 space-y-3 mb-4">
                 <button onclick="App.openUpdateModal('all')" class="w-full py-4 rounded-xl bg-cyan-500/10 text-cyan-400 font-bold border border-cyan-500/30 hover:bg-cyan-500 hover:text-black transition-colors flex items-center justify-center gap-2"><i data-lucide="sparkles" class="w-5 h-5"></i> Historique des MAJ (v${APP_VERSION})</button>
                 <button onclick="App.logout()" class="w-full py-4 rounded-xl bg-red-500/10 text-red-500 font-bold border border-red-500/30 hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center gap-2"><i data-lucide="log-out" class="w-5 h-5"></i> Se déconnecter</button>
@@ -608,6 +702,7 @@ const App = {
         let modalContainer = document.getElementById('modal-container');
         if (!modalContainer) { modalContainer = document.createElement('div'); modalContainer.id = 'modal-container'; document.getElementById('app-container').appendChild(modalContainer); }
         
+        // MODALS
         if (AppState.missedTasksNotif.length > 0) {
             modalContainer.innerHTML = `
                 <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4" onclick="App.closeMissedTasksNotif()">
