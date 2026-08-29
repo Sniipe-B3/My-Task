@@ -23,9 +23,14 @@ const auth = getAuth(firebaseApp);
 // ==========================================
 const RELEASE_HISTORY = [
     {
+        version: "1.7.1",
+        title: "Correctifs Calendrier & UI",
+        notes: "• 🐛 Correction de la fenêtre des nouveautés qui ne s'ouvrait plus.<br>• 🗓️ Le calendrier affiche désormais les mois et permet de scroller sur 90 jours.<br>• 🗑️ Ajout d'un bouton pour effacer la planification d'une tâche."
+    },
+    {
         version: "1.7.0",
         title: "Le Calendrier & Timeblocking",
-        notes: "• 📅 Nouvel onglet Calendrier : Naviguez de jour en jour avec une timeline chronologique de la journée.<br>• ⏰ Planification précise : Fixez une date et une heure directement depuis la fiche tâche.<br>• 🤖 Créneaux intelligents : Dessinez un bloc de temps libre dans le calendrier et laissez l'algorithme le remplir.<br>• 🧹 Nettoyage auto : Les tâches planifiées non terminées à l'heure dite retournent automatiquement dans la Base pour ne pas polluer l'agenda."
+        notes: "• 📅 Nouvel onglet Calendrier : Naviguez de jour en jour avec une timeline chronologique de la journée.<br>• ⏰ Planification précise : Fixez une date et une heure directement depuis la fiche tâche.<br>• 🤖 Créneaux intelligents : Dessinez un bloc de temps libre dans le calendrier et laissez l'algorithme le remplir.<br>• 🧹 Nettoyage auto : Les tâches planifiées non terminées à l'heure dite retournent automatiquement dans la Base."
     },
     {
         version: "1.6.4.1",
@@ -62,14 +67,14 @@ const AppState = {
     authMessage: '', 
     showPassword: false, 
 
-    activeTab: 'calendar', // On démarre sur le calendrier par défaut
-    selectedDate: getTodayString(), // Date sélectionnée dans le calendrier
+    activeTab: 'calendar', 
+    selectedDate: getTodayString(), 
 
     settings: getDefaultSettings(),
     categories: [],
     projects: [],
     tasks: [],
-    availabilities: [], // Désormais liés à une date précise
+    availabilities: [], 
     
     homeTime: 30, homeLocations: [], homeSuggestions: [], homeSearched: false,
     expandedCategoryIds: [], 
@@ -79,10 +84,11 @@ const AppState = {
     activeMenu: null, deletePrompt: null, editPrompt: null, notePrompt: null,
     taskModal: null,
     availabilityModal: false,
+    
     showUpdateModal: false,
     updateModalMode: null,
     lastSeenVersion: null,
-    missedTasksNotif: [] // Tâches non effectuées remises dans la base
+    missedTasksNotif: [] 
 };
 
 // ==========================================
@@ -100,7 +106,6 @@ const App = {
         let missed = [];
         let hasChanges = false;
 
-        // Tâches principales
         AppState.tasks = AppState.tasks.map(t => {
             if (t.status !== 'done' && t.scheduledDate) {
                 const [tH, tM] = t.scheduledTime ? t.scheduledTime.split(':').map(Number) : [23, 59];
@@ -110,11 +115,10 @@ const App = {
                 if (isPastDate || isPastTime) {
                     missed.push(t);
                     hasChanges = true;
-                    return { ...t, scheduledDate: null, scheduledTime: null }; // Retire du calendrier
+                    return { ...t, scheduledDate: null, scheduledTime: null };
                 }
             }
             
-            // Sous-tâches
             if (t.subtasks && t.subtasks.length > 0) {
                 let subChanged = false;
                 const newSubs = t.subtasks.map(s => {
@@ -136,7 +140,6 @@ const App = {
             return t;
         });
 
-        // Supprime aussi les créneaux libres passés pour faire propre
         const oldAvailLength = AppState.availabilities.length;
         AppState.availabilities = AppState.availabilities.filter(a => {
             const [aH, aM] = a.end ? a.end.split(':').map(Number) : [23, 59];
@@ -146,13 +149,8 @@ const App = {
         });
         if (oldAvailLength !== AppState.availabilities.length) hasChanges = true;
 
-        if (missed.length > 0) {
-            AppState.missedTasksNotif = missed;
-        }
-
-        if (hasChanges && AppState.currentUser) {
-            this.saveToCloud();
-        }
+        if (missed.length > 0) { AppState.missedTasksNotif = missed; }
+        if (hasChanges && AppState.currentUser) { this.saveToCloud(); }
     },
 
     closeMissedTasksNotif() {
@@ -226,8 +224,16 @@ const App = {
     setTab(tab) { AppState.activeTab = tab; this.render(); },
 
     // --- GESTION NOUVEAUTÉS & PARAMÈTRES ---
-    openUpdateModal(mode = 'all') { AppState.updateModalMode = mode; this.render(); },
-    closeUpdateModal() { AppState.updateModalMode = null; this.render(); },
+    openUpdateModal(mode = 'all') { 
+        AppState.updateModalMode = mode; 
+        AppState.showUpdateModal = true; 
+        this.render(); 
+    },
+    closeUpdateModal() { 
+        AppState.updateModalMode = null; 
+        AppState.showUpdateModal = false; 
+        this.render(); 
+    },
     addSetting(type, inputId) {
         const input = document.getElementById(inputId); let val = input.value.trim();
         if (!val) return;
@@ -272,7 +278,6 @@ const App = {
 
     // --- FICHE TÂCHE UNIFIÉE ---
     openNewTaskModal(projectId = null) {
-        // Pré-remplir la date si on est sur l'onglet calendrier
         const defDate = AppState.activeTab === 'calendar' ? AppState.selectedDate : null;
         AppState.taskModal = { 
             id: Date.now().toString(), parentId: null, isNew: true,
@@ -294,6 +299,14 @@ const App = {
     },
     closeTaskModal() { AppState.taskModal = null; this.render(); },
     
+    // NOUVEAU: Permet de vider rapidement la date et l'heure
+    clearTaskSchedule() {
+        const dateInput = document.getElementById('modal-task-date');
+        const timeInput = document.getElementById('modal-task-time');
+        if(dateInput) dateInput.value = '';
+        if(timeInput) timeInput.value = '';
+    },
+
     saveTaskModal(event) {
         event.preventDefault(); const form = event.target; const { id, parentId, isNew } = AppState.taskModal;
         const name = document.getElementById('modal-task-name').value;
@@ -303,7 +316,6 @@ const App = {
         const priorityBtn = form.querySelector('.modal-priority-selected');
         const priority = priorityBtn ? priorityBtn.innerText.trim() : 'Moyenne';
         
-        // Calendrier
         const scheduledDate = document.getElementById('modal-task-date').value || null;
         const scheduledTime = document.getElementById('modal-task-time').value || null;
 
@@ -452,7 +464,7 @@ const App = {
         if (!slot) return;
 
         const priorityWeights={'Urgence':4, 'Haute':3,'Moyenne':2,'Basse':1};
-        let availableTasks = this.getFlatActiveTasks().filter(t => !t.scheduledDate); // On ne prend que les tâches non planifiées
+        let availableTasks = this.getFlatActiveTasks().filter(t => !t.scheduledDate); 
 
         availableTasks.sort((a,b) => {
             if (a.projectId && a.projectId === b.projectId) {
@@ -472,11 +484,10 @@ const App = {
         for (let i = 0; i < availableTasks.length; i++) {
             const task = availableTasks[i];
             
-            // Vérification simple de blocage par étape précédente
             const numTask = parseInt(task.name);
             if (!isNaN(numTask) && numTask > 1) {
                 const prevTask = availableTasks.find(t => t.projectId === task.projectId && parseInt(t.name) === (numTask - 1));
-                if (prevTask) continue; // La tâche précédente n'est pas faite et n'est pas encore planifiée ici
+                if (prevTask) continue; 
             }
 
             if ((currentUsedTime + task.duration) <= slot.duration) {
@@ -486,17 +497,14 @@ const App = {
                 }
                 
                 if (matchLoc) {
-                    // Calcul de l'heure d'attribution
                     const timeStr = `${String(currentH).padStart(2,'0')}:${String(currentM).padStart(2,'0')}`;
                     
-                    // Appliquer la date et l'heure à la vraie tâche dans AppState
                     if (task.isSubtask) {
                         AppState.tasks = AppState.tasks.map(t => t.id === task.parentId ? { ...t, subtasks: t.subtasks.map(s => s.id === task.id ? { ...s, scheduledDate: slot.date, scheduledTime: timeStr } : s) } : t);
                     } else {
                         AppState.tasks = AppState.tasks.map(t => t.id === task.id ? { ...t, scheduledDate: slot.date, scheduledTime: timeStr } : t);
                     }
 
-                    // Incrémenter le temps
                     currentUsedTime += task.duration;
                     currentM += task.duration;
                     while (currentM >= 60) { currentH += 1; currentM -= 60; }
@@ -506,7 +514,6 @@ const App = {
         }
 
         if (tasksChanged) {
-            // Optionnel : réduire ou supprimer le slot si rempli
             AppState.availabilities = AppState.availabilities.filter(a => a.id !== slotId);
             this.save();
         } else {
@@ -542,7 +549,7 @@ const App = {
     },
 
     renderTask(task, minimal=false, parentId=null, parentName=null){
-        const isDone = task.status === 'done'; const isSubtask = parentId !== null; const type = isSubtask ? 'subtask' : 'task';
+        const isDone = task.status === 'done'; const isSubtask = parentId !== null;
         const argParent = isSubtask ? `, '${parentId}'` : '';
         const priorityColors = {'Urgence':'text-red-400 bg-red-500/10 border-red-500/30', 'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
         const hasLocations = task.locations && task.locations.length > 0;
@@ -573,25 +580,28 @@ const App = {
     renderCalendar() {
         const priorityColors = {'Urgence':'text-red-400 border-red-500/30', 'Haute':'text-purple-400 border-purple-500/30','Moyenne':'text-amber-400 border-amber-500/30','Basse':'text-blue-400 border-blue-500/30'};
 
-        // Génération du bandeau de dates (J-3 à J+14)
+        // Génération du bandeau de dates (J-3 à J+90)
         const dates = [];
         const todayDate = new Date();
         const startDay = new Date(todayDate); startDay.setDate(todayDate.getDate() - 3);
+        const months = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Aoû','Sep','Oct','Nov','Déc'];
         
-        for (let i=0; i<18; i++) {
+        for (let i=0; i<90; i++) {
             const d = new Date(startDay); d.setDate(startDay.getDate() + i);
             const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
             const dayName = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'][d.getDay()];
-            dates.push({ date: dStr, label: dayName, num: d.getDate(), isToday: dStr === getTodayString() });
+            const monthName = months[d.getMonth()];
+            dates.push({ date: dStr, label: dayName, num: d.getDate(), month: monthName, isToday: dStr === getTodayString() });
         }
 
         let datesHtml = `<div class="flex gap-2 overflow-x-auto pb-4 no-scrollbar scroll-smooth" id="calendar-date-picker">`;
         dates.forEach(d => {
             const isSelected = d.date === AppState.selectedDate;
             datesHtml += `
-            <div onclick="App.selectDate('${d.date}')" class="flex flex-col items-center justify-center min-w-[50px] p-2 rounded-2xl cursor-pointer transition-all border ${isSelected ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]' : d.isToday ? 'bg-[#1A1D24] border-gray-600' : 'bg-[#0D0F12] border-gray-800 hover:border-gray-700'}">
+            <div onclick="App.selectDate('${d.date}')" class="flex flex-col items-center justify-center min-w-[55px] p-2 rounded-2xl cursor-pointer transition-all border ${isSelected ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]' : d.isToday ? 'bg-[#1A1D24] border-gray-600' : 'bg-[#0D0F12] border-gray-800 hover:border-gray-700'}">
                 <span class="text-[10px] font-bold uppercase ${isSelected ? 'text-black' : d.isToday ? 'text-cyan-400' : 'text-gray-500'}">${d.label}</span>
                 <span class="text-lg font-black ${isSelected ? 'text-black' : 'text-white'}">${d.num}</span>
+                <span class="text-[9px] font-bold uppercase ${isSelected ? 'text-black' : 'text-gray-500'}">${d.month}</span>
             </div>`;
         });
         datesHtml += `</div>`;
@@ -665,7 +675,6 @@ const App = {
                         </div>
                     </div>`;
                 } else {
-                    // Créneau Libre
                     timelineHtml += `
                     <div class="relative pl-6 pb-2">
                         <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full bg-indigo-500 border border-[#0D0F12] animate-pulse"></div>
@@ -694,9 +703,7 @@ const App = {
                 <h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="calendar-days" class="text-cyan-400"></i> Calendrier</h2>
                 <button onclick="App.openAvailabilityModal()" class="px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-xs font-bold">+ Créneau</button>
             </div>
-            
             ${datesHtml}
-            
             <div class="bg-[#1A1D24] p-4 rounded-3xl border border-gray-800 shadow-xl min-h-[50vh]">
                 <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 border-b border-gray-800 pb-2">Timeline</h3>
                 ${timelineHtml}
@@ -706,7 +713,7 @@ const App = {
     },
 
     renderHome() {
-        let allActive = this.getFlatActiveTasks().filter(t => !t.scheduledDate); // On ne propose que les tâches NON planifiées
+        let allActive = this.getFlatActiveTasks().filter(t => !t.scheduledDate); 
         
         const priorityWeights={'Urgence':4, 'Haute':3,'Moyenne':2,'Basse':1};
         const urgencies = [...allActive].sort((a, b) => {
@@ -787,7 +794,6 @@ const App = {
         if(AppState.showAddCategory) {
             html += `<div class="bg-[#1A1D24] p-4 rounded-2xl border border-indigo-500/30 mb-4 flex gap-2"><input type="text" id="new-cat-name" placeholder="Nom du dossier..." class="flex-1 bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addCategory()" class="bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold">OK</button></div>`;
         }
-        
         if(AppState.showAddProject) {
             html += `<div class="bg-[#1A1D24] p-4 rounded-2xl border border-cyan-500/30 mb-4 flex flex-col gap-3"><input type="text" id="new-proj-name" placeholder="Nom du projet..." class="w-full bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><div class="flex gap-2"><select id="new-proj-category" class="flex-1 bg-[#0D0F12] rounded-lg px-3 py-2 text-sm text-gray-300 border border-gray-800 focus:outline-none"><option value="">Dossier : Aucun</option>${AppState.categories.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select><button onclick="App.addProject()" class="bg-cyan-500 text-black px-4 py-2 rounded-lg text-sm font-bold">OK</button></div></div>`;
         }
@@ -850,7 +856,7 @@ const App = {
             
             <div class="mt-8 space-y-3 mb-4">
                 <button onclick="App.openUpdateModal('all')" class="w-full py-4 rounded-xl bg-cyan-500/10 text-cyan-400 font-bold border border-cyan-500/30 hover:bg-cyan-500 hover:text-black transition-colors flex items-center justify-center gap-2">
-                    <i data-lucide="sparkles" class="w-5 h-5"></i> Historique des Mises à jour
+                    <i data-lucide="sparkles" class="w-5 h-5"></i> Historique des Mises à jour (v${APP_VERSION})
                 </button>
                 
                 <button onclick="App.logout()" class="w-full py-4 rounded-xl bg-red-500/10 text-red-500 font-bold border border-red-500/30 hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center gap-2">
@@ -989,7 +995,10 @@ const App = {
                             </div>` : ''}
 
                             <div class="p-3 border border-gray-800 rounded-xl bg-[#0D0F12]">
-                                <label class="text-[10px] text-cyan-400 uppercase font-bold mb-2 flex items-center gap-1"><i data-lucide="calendar" class="w-3 h-3"></i> Planification (Optionnel)</label>
+                                <div class="flex justify-between items-center mb-2">
+                                    <label class="text-[10px] text-cyan-400 uppercase font-bold flex items-center gap-1"><i data-lucide="calendar" class="w-3 h-3"></i> Planification</label>
+                                    <button type="button" onclick="App.clearTaskSchedule()" class="text-[10px] text-gray-500 hover:text-red-400 flex items-center gap-1 transition-colors"><i data-lucide="eraser" class="w-3 h-3"></i> Effacer</button>
+                                </div>
                                 <div class="flex gap-2">
                                     <input type="date" id="modal-task-date" value="${d.scheduledDate || ''}" class="flex-1 bg-transparent text-sm text-white focus:outline-none border border-gray-800 rounded-lg px-2 py-2">
                                     <input type="time" id="modal-task-time" value="${d.scheduledTime || ''}" class="w-24 bg-transparent text-sm text-white focus:outline-none border border-gray-800 rounded-lg px-2 py-2 text-center">
@@ -1113,6 +1122,7 @@ const App = {
                 if (lastSeenVersion !== APP_VERSION) {
                     AppState.lastSeenVersion = lastSeenVersion;
                     AppState.updateModalMode = 'unseen';
+                    AppState.showUpdateModal = true;
                     localStorage.setItem('osdevie_last_seen_version', APP_VERSION);
                 }
 
