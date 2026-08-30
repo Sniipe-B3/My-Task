@@ -571,10 +571,9 @@ const App = {
                 
                 this.checkMissedTasks();
                 this.render();
-            } else {
+                        } else {
                 AppState.currentUser = null;
-                const content = document.getElementById('app-content');
-                if (content) content.innerHTML = `<h2 class="text-xl font-bold text-white text-center mt-10">Veuillez vous connecter.</h2>`;
+                this.render();
             }
         });
     }
