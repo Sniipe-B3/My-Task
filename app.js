@@ -947,25 +947,25 @@ const App = {
 
     renderSettings() {
         // === DESCRIPTIF: PARAMETRES ===
-        // J'ai mis à jour la fonction renderList pour ne gérer que les Lieux, on a plus besoin de la gestion de liste des Temps
         const renderList = (type, placeholder) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2"><i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Filtres de contextes (lieux, énergie...)</h3><div class="flex gap-2 mb-4"><input type="text" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}', '${item}')" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
+        
         return `
         <div class="space-y-4">
             <div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>
             
             ${renderList('locations', 'Ex: Garage, Fatigue...')}
             
-            <div class="mt-8 space-y-3 mb-4">
-                <button onclick="App.openUpdateModal('all')" class="w-full py-4 rounded-xl bg-cyan-500/10 text-cyan-400 font-bold border border-cyan-500/30 hover:bg-cyan-500 hover:text-black transition-colors flex items-center justify-center gap-2">
-                    <i data-lucide="sparkles" class="w-5 h-5"></i> Historique des MAJ (v${APP_VERSION})
-                </button>
-                
+            <div class="mt-8 mb-4">
                 <button onclick="App.logout()" class="w-full py-4 rounded-xl bg-red-500/10 text-red-500 font-bold border border-red-500/30 hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center gap-2">
                     <i data-lucide="log-out" class="w-5 h-5"></i> Se déconnecter
                 </button>
             </div>
             
-            <div class="mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">My Task v${APP_VERSION}</span></div>
+            <div class="mb-4 flex justify-center">
+                <button onclick="App.openUpdateModal('all')" class="text-xs font-bold text-gray-500 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800 hover:border-cyan-500/50 hover:text-cyan-400 transition-colors flex items-center gap-2 shadow-sm cursor-pointer">
+                    My Task v${APP_VERSION} <i data-lucide="info" class="w-3.5 h-3.5"></i>
+                </button>
+            </div>
         </div>`;
     },
     
