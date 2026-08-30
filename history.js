@@ -2,6 +2,11 @@
 // HISTORIQUE DES MISES À JOUR (My Task)
 // ==========================================
 export const RELEASE_HISTORY = [
+    {
+        version: "1.7.5",
+        title: "Navigation & Calendrier",
+        notes: "• ⚡ Navigation éclair : Cliquez sur la date affichée sur une tâche pour être instantanément téléporté au bon jour dans le calendrier.<br>• 🗓️ Défilement intelligent : Le calendrier glisse désormais fluidement pour centrer automatiquement la date sélectionnée sans effet de saut."
+    },
         {
         version: "1.7.4",
         title: "Durée Libre & Flexibilité",

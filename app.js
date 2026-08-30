@@ -487,6 +487,12 @@ const App = {
     },
 
     // --- LE CALENDRIER ---
+    // NOUVEAU: Fonction pour changer la date ET basculer sur l'onglet calendrier
+    goToCalendarDate(dateStr) {
+        AppState.selectedDate = dateStr;
+        this.setTab('calendar');
+    },
+
     selectDate(dateStr) { AppState.selectedDate = dateStr; this.render(); },
     openAvailabilityModal() { AppState.availabilityModal = true; this.render(); },
     closeAvailabilityModal() { AppState.availabilityModal = false; this.render(); },
@@ -623,7 +629,7 @@ const App = {
                         <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ${task.duration}m</span>
                         ${hasLocations ? `<span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3 text-emerald-400"></i> ${task.locations.join(', ')}</span>` : ''}
                         <span class="px-2 py-0.5 rounded-md text-[10px] border font-bold ${priorityColors[task.priority || 'Moyenne']}">${task.priority || 'Moyenne'}</span>
-                        ${task.scheduledDate ? `<span class="flex items-center gap-1 text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/30"><i data-lucide="calendar" class="w-3 h-3"></i> ${task.scheduledDate.substring(5)}</span>` : ''}
+                        ${task.scheduledDate ? `<span onclick="App.goToCalendarDate('${task.scheduledDate}'); event.stopPropagation();" class="flex items-center gap-1 text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/30 cursor-pointer hover:bg-cyan-500/20 transition-colors" title="Voir dans le calendrier"><i data-lucide="calendar" class="w-3 h-3"></i> ${task.scheduledDate.substring(5)}</span>` : ''}
                         ${task.note && task.note.trim() !== '' ? `<span onclick="App.openNote('task', '${task.id}', ${isSubtask ? `'${parentId}'` : 'null'}); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
                     </div>
                     ${projectName && !isSubtask ? `<div class="text-[10px] text-indigo-400/70 font-semibold flex items-center gap-1 mt-1 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Tâche de : ${projectName}</div>` : ''}
