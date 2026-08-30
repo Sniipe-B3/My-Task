@@ -626,7 +626,7 @@ const App = {
         </div>`;
     },
 
-    renderTask(task, minimal=false, parentId=null, parentName=null){
+${task.note && task.note.trim() !== '' ? `<span onclick="App.openNote('task', '${task.id}', ${isSubtask ? `'${parentId}'` : 'null'}); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
         const isDone = task.status === 'done'; const isSubtask = parentId !== null;
         const argParent = isSubtask ? `, '${parentId}'` : '';
         const priorityColors = {'Urgence':'text-red-400 bg-red-500/10 border-red-500/30', 'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
@@ -748,7 +748,7 @@ const App = {
                             <div class="flex items-center gap-2 mt-1.5 text-[10px] text-gray-500 ml-1">
                                 <span><i data-lucide="clock" class="w-3 h-3 inline"></i> ${ev.duration}m</span>
                                 ${ev.locations && ev.locations.length > 0 ? `<span class="text-emerald-400"><i data-lucide="map-pin" class="w-3 h-3 inline"></i> ${ev.locations.join(', ')}</span>` : ''}
-                                ${ev.note && ev.note.trim() !== '' ? `<span class="text-amber-400"><i data-lucide="file-text" class="w-3 h-3 inline"></i></span>` : ''}
+                                ${ev.note && ev.note.trim() !== '' ? `<span onclick="App.openNote('task', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'}); event.stopPropagation();" class="text-amber-400 hover:text-amber-300 transition-colors cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3 inline"></i></span>` : ''}
                             </div>
                             ${ev.isSubtask && ev.parentName ? `<div class="text-[9px] text-indigo-400/70 font-semibold mt-1 ml-1"><i data-lucide="corner-down-right" class="w-3 h-3 inline"></i> ${ev.parentName}</div>` : ''}
                         </div>
@@ -1120,8 +1120,39 @@ const App = {
         } else if (AppState.activeMenu) {
             modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeMenu()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><div class="p-2 border-b border-gray-800/50"><button onclick="App.openEdit()" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="pencil" class="text-cyan-400 w-5 h-5"></i> Renommer</button><button onclick="App.openNote('${AppState.activeMenu.type}', '${AppState.activeMenu.id}')" class="w-full text-left px-6 py-4 text-white font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="file-text" class="text-amber-400 w-5 h-5"></i> Gérer la note</button><button onclick="App.openDelete()" class="w-full text-left px-6 py-4 text-red-500 font-bold hover:bg-[#1f232b] flex items-center gap-3"><i data-lucide="trash-2" class="w-5 h-5"></i> Supprimer</button></div><div class="p-2"><button onclick="App.closeMenu()" class="w-full text-center px-6 py-4 text-gray-500 font-bold hover:bg-[#1f232b] rounded-2xl">Annuler</button></div></div></div>`;
         } else if (AppState.notePrompt) {
-            modalContainer.innerHTML = `<div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeNote()"><div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()"><h3 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="file-text" class="text-amber-400"></i> Note</h3><form onsubmit="App.saveNote(event)" class="space-y-4"><textarea id="edit-note-text" rows="6" class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-amber-500 focus:outline-none placeholder-gray-600">${AppState.notePrompt.note}</textarea><div class="flex gap-3 mt-4"><button type="button" onclick="App.closeNote()" class="flex-1 py-3 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button><button type="submit" class="flex-1 py-3 rounded-xl bg-amber-500 text-black font-bold">Enregistrer</button></div></form></div></div>`;
-        } else if (AppState.editPrompt) {
+            if (AppState.notePrompt.mode === 'view') {
+                modalContainer.innerHTML = `
+                <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4" onclick="App.closeNote()">
+                    <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-bold text-white flex items-center gap-2"><i data-lucide="file-text" class="text-amber-400"></i> Note</h3>
+                            <button onclick="App.closeNote()" class="text-gray-500 hover:text-white transition-colors p-1"><i data-lucide="x" class="w-5 h-5"></i></button>
+                        </div>
+                        <div class="bg-[#0D0F12] rounded-xl p-4 border border-gray-800 text-gray-300 text-sm whitespace-pre-wrap max-h-[50vh] overflow-y-auto mb-6 shadow-inner">
+                            ${AppState.notePrompt.note}
+                        </div>
+                        <div class="flex gap-3">
+                            <button onclick="App.deleteNote()" class="flex-1 py-3 rounded-xl bg-red-500/10 text-red-500 font-bold border border-red-500/30 hover:bg-red-500 hover:text-white transition-colors">Supprimer</button>
+                            <button onclick="App.editNote()" class="flex-1 py-3 rounded-xl bg-amber-500 text-black font-bold hover:bg-amber-400 transition-colors shadow-[0_0_15px_rgba(245,158,11,0.2)]">Modifier</button>
+                        </div>
+                    </div>
+                </div>`;
+            } else {
+                modalContainer.innerHTML = `
+                <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeNote()">
+                    <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
+                        <h3 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="file-text" class="text-amber-400"></i> ${AppState.notePrompt.note ? 'Modifier la note' : 'Nouvelle note'}</h3>
+                        <form onsubmit="App.saveNote(event)" class="space-y-4">
+                            <textarea id="edit-note-text" rows="6" class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-amber-500 focus:outline-none placeholder-gray-600">${AppState.notePrompt.note}</textarea>
+                            <div class="flex gap-3 mt-4">
+                                <button type="button" onclick="${AppState.notePrompt.note ? 'App.openNote(AppState.notePrompt.type, AppState.notePrompt.id, AppState.notePrompt.parentId)' : 'App.closeNote()'}" class="flex-1 py-3 rounded-xl bg-[#0D0F12] text-white font-bold border border-gray-700">Annuler</button>
+                                <button type="submit" class="flex-1 py-3 rounded-xl bg-amber-500 text-black font-bold hover:bg-amber-400 transition-colors shadow-[0_0_15px_rgba(245,158,11,0.2)]">Enregistrer</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>`;
+            }
+            } else if (AppState.editPrompt) {
             const d = AppState.editPrompt.data; const dCatId = d.categoryId || '';
             modalContainer.innerHTML = `
                 <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeEdit()">
