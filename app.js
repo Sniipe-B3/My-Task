@@ -23,13 +23,14 @@ const auth = getAuth(firebaseApp);
 // ==========================================
 // 1. CONFIGURATION DES MISES À JOUR
 // ==========================================
-// L'historique complet est désormais stocké dans history.js !
 const APP_VERSION = RELEASE_HISTORY[0].version;
 
 // ==========================================
 // 2. DONNÉES INITIALES 
 // ==========================================
-const getDefaultSettings = () => ({ times: [15, 30, 60, 120], locations: ['Maison', 'Boulot', 'Ordi', 'Jardin'] });
+// === DESCRIPTIF: PARAMETRES PAR DEFAUT ===
+// J'ai supprimé la configuration "times" ici puisqu'on utilise désormais un champ libre !
+const getDefaultSettings = () => ({ locations: ['Maison', 'Boulot', 'Ordi', 'Jardin'] });
 const getDefaultCategories = () => ([{ id: 'c1', name: 'Business', note: '' }, { id: 'c2', name: 'Famille', note: '' }]);
 
 // ==========================================
@@ -133,10 +134,7 @@ const App = {
         if (hasChanges && AppState.currentUser) { this.saveToCloud(); }
     },
 
-    closeMissedTasksNotif() {
-        AppState.missedTasksNotif = [];
-        this.render();
-    },
+    closeMissedTasksNotif() { AppState.missedTasksNotif = []; this.render(); },
 
     // --- AUTHENTIFICATION ---
     async handleAuth(event) {
@@ -161,9 +159,7 @@ const App = {
             this.render();
         }
     },
-
     toggleAuthMode() { AppState.authMode = AppState.authMode === 'login' ? 'register' : 'login'; this.render(); },
-    
     togglePasswordVisibility() {
         AppState.showPassword = !AppState.showPassword;
         const pwdInput = document.getElementById('auth-password');
@@ -205,26 +201,18 @@ const App = {
     setTab(tab) { AppState.activeTab = tab; this.render(); },
 
     // --- GESTION NOUVEAUTÉS & PARAMÈTRES ---
-    openUpdateModal(mode = 'all') { 
-        AppState.updateModalMode = mode; 
-        AppState.showUpdateModal = true; 
-        this.render(); 
-    },
-    closeUpdateModal() { 
-        AppState.updateModalMode = null; 
-        AppState.showUpdateModal = false; 
-        this.render(); 
-    },
+    openUpdateModal(mode = 'all') { AppState.updateModalMode = mode; AppState.showUpdateModal = true; this.render(); },
+    closeUpdateModal() { AppState.updateModalMode = null; AppState.showUpdateModal = false; this.render(); },
     addSetting(type, inputId) {
         const input = document.getElementById(inputId); let val = input.value.trim();
         if (!val) return;
-        if (type === 'times') { val = parseInt(val); if (isNaN(val) || val <= 0) return; }
-        if (!AppState.settings[type].includes(val)) { AppState.settings[type].push(val); if (type === 'times') AppState.settings[type].sort((a,b) => a - b); this.save(); }
+        // === DESCRIPTIF: CHANGEMENT PARAMETRES ===
+        // On ne gère plus les temps ici, on s'assure juste d'ajouter de nouveaux filtres
+        if (!AppState.settings[type].includes(val)) { AppState.settings[type].push(val); this.save(); }
         input.value = '';
     },
     removeSetting(type, val) {
         AppState.settings[type] = AppState.settings[type].filter(item => item !== val);
-        if (type === 'times' && AppState.homeTime === val) AppState.homeTime = AppState.settings.times[0] || 0;
         if (type === 'locations') AppState.homeLocations = AppState.homeLocations.filter(l => l !== val);
         this.save();
     },
@@ -237,12 +225,9 @@ const App = {
         AppState.showAddCategory = false; this.save();
     },
     toggleCategoryExpand(id) {
-        AppState.expandedCategoryIds.includes(id) 
-            ? AppState.expandedCategoryIds = AppState.expandedCategoryIds.filter(cId => cId !== id)
-            : AppState.expandedCategoryIds.push(id);
+        AppState.expandedCategoryIds.includes(id) ? AppState.expandedCategoryIds = AppState.expandedCategoryIds.filter(cId => cId !== id) : AppState.expandedCategoryIds.push(id);
         this.render();
     },
-    
     addProject(){
         const name=document.getElementById('new-proj-name').value; if(!name.trim()) return;
         AppState.projects.push({id:Date.now().toString(), name, categoryId:document.getElementById('new-proj-category').value || null, note:''});
@@ -291,7 +276,13 @@ const App = {
     saveTaskModal(event) {
         event.preventDefault(); const form = event.target; const { id, parentId, isNew } = AppState.taskModal;
         const name = document.getElementById('modal-task-name').value;
-        const duration = parseInt(document.getElementById('modal-task-duration').value);
+        
+        // === DESCRIPTIF: GESTION DE LA DURÉE MANUELLE ===
+        // On récupère ce que l'utilisateur a tapé dans la fiche tâche, et on s'assure que ça ne dépasse pas 10h (600min)
+        let duration = parseInt(document.getElementById('modal-task-duration').value);
+        if (isNaN(duration) || duration < 1) duration = 15; // Valeur par défaut
+        if (duration > 600) duration = 600; // Limite de 10 heures !
+
         const locations = this.getFormLocations(form);
         const note = document.getElementById('modal-task-note').value;
         const priorityBtn = form.querySelector('.modal-priority-selected');
@@ -356,26 +347,19 @@ const App = {
         
         if (itemData) {
             const hasNote = itemData.note && itemData.note.trim() !== '';
-            // Si la note existe, on la met en mode "view", sinon directement en "edit"
             AppState.notePrompt = { type, id, parentId, note: itemData.note || '', mode: hasNote ? 'view' : 'edit' };
             AppState.activeMenu = null; 
             this.render();
         }
     },
-
-    editNote() {
-        if (AppState.notePrompt) { AppState.notePrompt.mode = 'edit'; this.render(); }
-    },
-
+    editNote() { if (AppState.notePrompt) { AppState.notePrompt.mode = 'edit'; this.render(); } },
     deleteNote() {
         if (confirm("Supprimer cette note ?")) {
             const { type, id, parentId } = AppState.notePrompt;
             this.updateItemNote(type, id, parentId, '');
-            AppState.notePrompt = null;
-            this.save();
+            AppState.notePrompt = null; this.save();
         }
     },
-    
     closeNote() { AppState.notePrompt = null; this.render(); },
     
     saveNote(event) {
@@ -383,33 +367,21 @@ const App = {
         const { type, id, parentId } = AppState.notePrompt;
         const noteText = document.getElementById('edit-note-text').value;
         this.updateItemNote(type, id, parentId, noteText);
-        AppState.notePrompt = null; 
-        this.save();
+        AppState.notePrompt = null; this.save();
     },
-
     updateItemNote(type, id, parentId, noteText) {
-        if (type === 'category') {
-            AppState.categories = AppState.categories.map(c => c.id === id ? { ...c, note: noteText } : c);
-        } else if (type === 'project') {
-            AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, note: noteText } : p);
-        } else if (type === 'task') {
-            if (parentId && parentId !== 'null') {
-                AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, note: noteText } : s) } : t);
-            } else {
-                AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, note: noteText } : t);
-            }
+        if (type === 'category') { AppState.categories = AppState.categories.map(c => c.id === id ? { ...c, note: noteText } : c); } 
+        else if (type === 'project') { AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, note: noteText } : p); } 
+        else if (type === 'task') {
+            if (parentId && parentId !== 'null') { AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, note: noteText } : s) } : t); } 
+            else { AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, note: noteText } : t); }
         }
     },
 
     saveEdit(event) {
-        event.preventDefault(); 
-        const { type, id } = AppState.editPrompt;
-        const name = document.getElementById('edit-name').value;
-        if (type === 'category') {
-            AppState.categories = AppState.categories.map(c => c.id === id ? { ...c, name } : c);
-        } else if (type === 'project') {
-            AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, name, categoryId: document.getElementById('edit-proj-category').value || null } : p);
-        }
+        event.preventDefault(); const { type, id } = AppState.editPrompt; const name = document.getElementById('edit-name').value;
+        if (type === 'category') { AppState.categories = AppState.categories.map(c => c.id === id ? { ...c, name } : c); } 
+        else if (type === 'project') { AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, name, categoryId: document.getElementById('edit-proj-category').value || null } : p); }
         AppState.editPrompt = null; this.save();
     },
 
@@ -417,13 +389,8 @@ const App = {
     cancelDelete() { AppState.deletePrompt = null; this.render(); },
     confirmDelete() {
         const { type, id } = AppState.deletePrompt;
-        if (type === 'category') {
-            AppState.categories = AppState.categories.filter(c => c.id !== id);
-            AppState.projects.forEach(p => { if (p.categoryId === id) p.categoryId = null; });
-        } else if (type === 'project') { 
-            AppState.projects = AppState.projects.filter(p => p.id !== id); 
-            AppState.tasks = AppState.tasks.filter(t => t.projectId !== id); 
-        }
+        if (type === 'category') { AppState.categories = AppState.categories.filter(c => c.id !== id); AppState.projects.forEach(p => { if (p.categoryId === id) p.categoryId = null; }); } 
+        else if (type === 'project') { AppState.projects = AppState.projects.filter(p => p.id !== id); AppState.tasks = AppState.tasks.filter(t => t.projectId !== id); }
         AppState.deletePrompt = null; this.save();
     },
 
@@ -441,7 +408,7 @@ const App = {
         btn.className = `flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold border transition-colors ${className} ${colors}`;
     },
     selectModalPriority(btn) { this.applyPriorityStyle(btn, 'modal-priority-selected'); },
-    setHomeTime(time) { AppState.homeTime=time; this.render(); },
+    
     toggleHomeLocation(loc) { AppState.homeLocations.includes(loc) ? AppState.homeLocations = AppState.homeLocations.filter(l => l !== loc) : AppState.homeLocations.push(loc); this.render(); },
 
     // --- ACTIONS TÂCHES ---
@@ -453,7 +420,6 @@ const App = {
         AppState.showProjectAddTaskModal = null; this.save();
     },
     
-    // --- ALGORITHMES ACTION DIRECTE ---
     getFlatActiveTasks() {
         let allActive = [];
         AppState.tasks.forEach(t => {
@@ -472,6 +438,17 @@ const App = {
     },
 
     generateAction() {
+        // === DESCRIPTIF: GESTION DE LA RECHERCHE (HOME) ===
+        // On récupère en direct la valeur tapée dans le champ par l'utilisateur au moment où il clique sur le bouton "Trouver quoi faire".
+        const timeInput = document.getElementById('home-time-input');
+        if (timeInput) {
+            let parsedTime = parseInt(timeInput.value);
+            if (isNaN(parsedTime) || parsedTime <= 0) parsedTime = 30; // On sécurise si c'est vide
+            if (parsedTime > 600) parsedTime = 600; // Limite stricte
+            AppState.homeTime = parsedTime;
+            timeInput.value = parsedTime; // On réécrit au propre dans le champ
+        }
+
         const priorityWeights={'Urgence':4, 'Haute':3,'Moyenne':2,'Basse':1};
         let allAvailable = [];
         AppState.tasks.forEach(t => {
@@ -560,7 +537,6 @@ const App = {
 
         let currentUsedTime = 0;
         let [currentH, currentM] = slot.start.split(':').map(Number);
-
         let tasksChanged = false;
 
         for (let i = 0; i < availableTasks.length; i++) {
@@ -716,14 +692,12 @@ const App = {
         let timelineHtml = `<div class="relative space-y-3 mt-2 pl-2 border-l border-gray-800">`;
 
         // === DESCRIPTIF: DÉTECTION DU TEMPS ACTUEL ===
-        // On récupère l'heure et on convertit tout en minutes pour faciliter les mathématiques (ex: 14h30 = 870 minutes)
         const now = new Date();
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
         const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
         const isToday = AppState.selectedDate === getTodayString();
-        let timeLineDrawn = false; // Mémorise si on a déjà dessiné la ligne ou non.
+        let timeLineDrawn = false; 
 
-        // Petite fonction HTML qui génère la ligne rouge toute seule, pour la placer "entre" deux éléments
         const getStandaloneRedLine = () => `
             <div class="relative flex items-center mb-4 -ml-4 z-20">
                 <div class="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
@@ -732,12 +706,10 @@ const App = {
             </div>`;
 
         if (dayEvents.length === 0) {
-            // === DESCRIPTIF: SCÉNARIO SI AUCUNE TÂCHE AUJOURD'HUI ===
             if (isToday) timelineHtml += getStandaloneRedLine();
             timelineHtml += `<div class="py-10 text-center text-gray-500 text-sm font-semibold">Rien de prévu à cette date.</div>`;
         } else {
             dayEvents.forEach(ev => {
-                // === DESCRIPTIF: CONVERSION DES HORAIRES DE LA TÂCHE ===
                 let startH, startM, duration;
                 if (ev.type === 'task') {
                     [startH, startM] = (ev.scheduledTime || '23:59').split(':').map(Number);
@@ -749,20 +721,15 @@ const App = {
                 const startMin = startH * 60 + startM;
                 const endMin = startMin + duration;
 
-                // === DESCRIPTIF: SCÉNARIO 1 - LA LIGNE ROUGE EST AU-DESSUS (Avant) ===
-                // L'heure actuelle est inférieure à l'heure de la tâche, on dessine la ligne AVANT la tâche.
                 if (isToday && !timeLineDrawn && currentMinutes < startMin) {
                     timelineHtml += getStandaloneRedLine();
                     timeLineDrawn = true;
                 }
 
-                // === DESCRIPTIF: SCÉNARIO 2 - LA LIGNE ROUGE EST SUR LA TÂCHE (Pendant) ===
-                // L'heure est comprise entre le début et la fin de cette tâche
                 let inlineRedLine = '';
                 if (isToday && !timeLineDrawn && currentMinutes >= startMin && currentMinutes < endMin) {
-                    // On calcule la progression pour la placer en hauteur via le CSS (ex: top: 50%)
                     let progress = (currentMinutes - startMin) / duration;
-                    progress = Math.max(0.10, Math.min(0.90, progress)); // Empêche la ligne de trop déborder en haut/bas de la case
+                    progress = Math.max(0.10, Math.min(0.90, progress)); 
                     
                     inlineRedLine = `
                     <div class="absolute w-full flex items-center z-20 pointer-events-none" style="top: ${progress * 100}%; left: -4px;">
@@ -779,7 +746,7 @@ const App = {
                     timelineHtml += `
                     <div class="relative pl-6 pb-2">
                         <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-cyan-500 border border-[#0D0F12]'}"></div>
-                        ${inlineRedLine} <!-- Injection de la ligne rouge ICI, uniquement si on est "pendant" la tâche -->
+                        ${inlineRedLine}
                         <div class="bg-[#1A1D24] p-3 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} cursor-pointer hover:border-gray-700 transition-colors" onclick="App.openTaskModal('${ev.id}'${ev.isSubtask ? `, '${ev.parentId}'` : ''})">
                             <div class="flex justify-between items-start mb-1">
                                 <div class="flex items-center gap-2">
@@ -803,7 +770,7 @@ const App = {
                     timelineHtml += `
                     <div class="relative pl-6 pb-2">
                         <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full bg-indigo-500 border border-[#0D0F12] animate-pulse"></div>
-                        ${inlineRedLine} <!-- Injection de la ligne rouge ICI pour les créneaux libres -->
+                        ${inlineRedLine}
                         <div class="bg-indigo-500/10 p-3 rounded-2xl border border-indigo-500/30">
                             <div class="flex justify-between items-start mb-2">
                                 <span class="text-xs font-black text-indigo-400">${ev.start} - ${ev.end}</span>
@@ -821,9 +788,6 @@ const App = {
                 }
             });
             
-            // === DESCRIPTIF: SCÉNARIO 3 - LA LIGNE ROUGE EST EN DESSOUS (Après) ===
-            // On a vérifié toutes les tâches, et la ligne n'est toujours pas dessinée. 
-            // Cela signifie qu'il est plus tard que la fin de toutes les tâches. On trace à la fin !
             if (isToday && !timeLineDrawn && dayEvents.length > 0) {
                 timelineHtml += getStandaloneRedLine();
             }
@@ -854,14 +818,17 @@ const App = {
             return (a.duration || 15) - (b.duration || 15);
         }).slice(0, 5);
 
+        // === DESCRIPTIF: NOUVEL INPUT POUR LE TEMPS ===
+        // J'ai mis en place l'input number avec une valeur de base, le tout se déclenchant à l'appui du gros bouton
         return `
         <div class="space-y-8">
             <section class="bg-[#1A1D24] rounded-3xl p-5 border border-gray-800/50 relative">
                 <h2 class="text-lg font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="play" class="text-cyan-400 fill-cyan-400 w-5 h-5"></i> Moteur d'Action</h2>
                 <p class="text-[10px] text-gray-500 mb-4 -mt-2">Recherche parmi les tâches non planifiées.</p>
                 <div class="space-y-4">
-                    <div><label class="text-xs font-semibold text-gray-400 uppercase mb-2 block">Temps dispo (min)</label>
-                        <div class="flex gap-2 flex-wrap">${AppState.settings.times.map(t=>`<button onclick="App.setHomeTime(${t})" class="flex-1 min-w-[50px] py-2 rounded-xl text-sm font-bold ${AppState.homeTime===t?'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50':'bg-[#0D0F12] text-gray-400 border border-transparent'}">${t}</button>`).join('')}</div>
+                    <div>
+                        <label class="text-xs font-semibold text-gray-400 uppercase mb-2 block">Temps dispo (min)</label>
+                        <input type="number" id="home-time-input" min="1" max="600" value="${AppState.homeTime}" class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-sm text-white border border-gray-800 focus:border-cyan-500 focus:outline-none" placeholder="Ex: 45 (max: 600 min)">
                     </div>
                     <div>
                         <label class="text-xs font-semibold text-gray-400 uppercase mb-2 flex items-center justify-between"><span>Filtre(s) possible(s)</span><span class="text-[10px] text-gray-500 font-normal">Vide = Partout</span></label>
@@ -979,26 +946,26 @@ const App = {
     },
 
     renderSettings() {
-        const renderList = (type, placeholder, isNumber) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Filtres' : '<i data-lucide="tag" class="text-indigo-400 w-4 h-4"></i> Catégories'}</h3><div class="flex gap-2 mb-4"><input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}',${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
-        
+        // === DESCRIPTIF: PARAMETRES ===
+        // J'ai mis à jour la fonction renderList pour ne gérer que les Lieux, on a plus besoin de la gestion de liste des Temps
+        const renderList = (type, placeholder) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2"><i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Filtres de contextes (lieux, énergie...)</h3><div class="flex gap-2 mb-4"><input type="text" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}', '${item}')" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
         return `
         <div class="space-y-4">
             <div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>
             
-            ${renderList('times', 'Ex: 45', true)}
-            ${renderList('locations', 'Ex: Garage, Fatigue...', false)}
+            ${renderList('locations', 'Ex: Garage, Fatigue...')}
             
-            <div class="mt-8 mb-8">
+            <div class="mt-8 space-y-3 mb-4">
+                <button onclick="App.openUpdateModal('all')" class="w-full py-4 rounded-xl bg-cyan-500/10 text-cyan-400 font-bold border border-cyan-500/30 hover:bg-cyan-500 hover:text-black transition-colors flex items-center justify-center gap-2">
+                    <i data-lucide="sparkles" class="w-5 h-5"></i> Historique des MAJ (v${APP_VERSION})
+                </button>
+                
                 <button onclick="App.logout()" class="w-full py-4 rounded-xl bg-red-500/10 text-red-500 font-bold border border-red-500/30 hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center gap-2">
                     <i data-lucide="log-out" class="w-5 h-5"></i> Se déconnecter
                 </button>
             </div>
             
-            <div class="mb-4 flex justify-center">
-                <button onclick="App.openUpdateModal('all')" class="text-xs font-bold text-gray-500 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800 hover:border-cyan-500/50 hover:text-cyan-400 transition-colors flex items-center gap-2 shadow-sm">
-                    My Task v${APP_VERSION} <i data-lucide="info" class="w-3.5 h-3.5"></i>
-                </button>
-            </div>
+            <div class="mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">My Task v${APP_VERSION}</span></div>
         </div>`;
     },
     
@@ -1139,11 +1106,10 @@ const App = {
                                 </div>
                             </div>
 
+                            <!-- === DESCRIPTIF: NOUVEL INPUT DUREE LIBRE === -->
                             <div>
-                                <label class="text-[10px] text-gray-500 uppercase font-bold">Durée</label>
-                                <select id="modal-task-duration" class="w-full bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-gray-300 border border-gray-800 text-center focus:outline-none">
-                                    ${AppState.settings.times.map(t => `<option value="${t}" ${d.duration == t ? 'selected' : ''}>${t}m</option>`).join('')}
-                                </select>
+                                <label class="text-[10px] text-gray-500 uppercase font-bold">Durée (minutes - max 10h)</label>
+                                <input type="number" id="modal-task-duration" value="${d.duration || 15}" min="1" max="600" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-sm text-white border border-gray-800 focus:border-cyan-500 focus:outline-none" placeholder="Ex: 45">
                             </div>
 
                             <div>
