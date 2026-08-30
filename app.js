@@ -4,6 +4,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
 import { RELEASE_HISTORY } from "./history.js";
 
 const firebaseConfig = {
@@ -162,6 +163,7 @@ const App = {
     },
 
     toggleAuthMode() { AppState.authMode = AppState.authMode === 'login' ? 'register' : 'login'; this.render(); },
+    
     togglePasswordVisibility() {
         AppState.showPassword = !AppState.showPassword;
         const pwdInput = document.getElementById('auth-password');
@@ -240,6 +242,7 @@ const App = {
             : AppState.expandedCategoryIds.push(id);
         this.render();
     },
+    
     addProject(){
         const name=document.getElementById('new-proj-name').value; if(!name.trim()) return;
         AppState.projects.push({id:Date.now().toString(), name, categoryId:document.getElementById('new-proj-category').value || null, note:''});
@@ -322,7 +325,7 @@ const App = {
         }
     },
 
-    // --- ANCIENS MENUS (Dossiers et Projets) ---
+    // --- GESTION DES NOTES ET MENUS ---
     openMenu(e, type, id, parentId = null) { 
         if (e) { e.preventDefault(); e.stopPropagation(); } 
         if (type === 'task' || type === 'subtask') { this.openTaskModal(id, parentId); return; }
@@ -338,7 +341,7 @@ const App = {
     },
     closeEdit() { AppState.editPrompt = null; this.render(); },
     
-        openNote(type, id, parentId = null) {
+    openNote(type, id, parentId = null) {
         let itemData;
         if (type === 'category') itemData = AppState.categories.find(c => c.id === id);
         else if (type === 'project') itemData = AppState.projects.find(p => p.id === id);
@@ -360,11 +363,11 @@ const App = {
         }
     },
 
-     editNote() {
+    editNote() {
         if (AppState.notePrompt) { AppState.notePrompt.mode = 'edit'; this.render(); }
     },
 
-     deleteNote() {
+    deleteNote() {
         if (confirm("Supprimer cette note ?")) {
             const { type, id, parentId } = AppState.notePrompt;
             this.updateItemNote(type, id, parentId, '');
@@ -372,10 +375,10 @@ const App = {
             this.save();
         }
     },
-
+    
     closeNote() { AppState.notePrompt = null; this.render(); },
     
-   saveNote(event) {
+    saveNote(event) {
         event.preventDefault();
         const { type, id, parentId } = AppState.notePrompt;
         const noteText = document.getElementById('edit-note-text').value;
@@ -599,7 +602,6 @@ const App = {
         }
     },
 
-
     // ==========================================
     // 5. RENDU VISUEL (HTML COMPONENTS)
     // ==========================================
@@ -626,7 +628,7 @@ const App = {
         </div>`;
     },
 
-    renderTaskItem(task, parentId = null, parentName = null) {
+    renderTask(task, minimal=false, parentId=null, parentName=null){
         const isDone = task.status === 'done'; const isSubtask = parentId !== null;
         const argParent = isSubtask ? `, '${parentId}'` : '';
         const priorityColors = {'Urgence':'text-red-400 bg-red-500/10 border-red-500/30', 'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
@@ -646,7 +648,7 @@ const App = {
                         ${hasLocations ? `<span class="flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3 text-emerald-400"></i> ${task.locations.join(', ')}</span>` : ''}
                         <span class="px-2 py-0.5 rounded-md text-[10px] border font-bold ${priorityColors[task.priority || 'Moyenne']}">${task.priority || 'Moyenne'}</span>
                         ${task.scheduledDate ? `<span class="flex items-center gap-1 text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/30"><i data-lucide="calendar" class="w-3 h-3"></i> ${task.scheduledDate.substring(5)}</span>` : ''}
-                        ${task.note && task.note.trim() !== '' ? `<span class="flex items-center text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
+                        ${task.note && task.note.trim() !== '' ? `<span onclick="App.openNote('task', '${task.id}', ${isSubtask ? `'${parentId}'` : 'null'}); event.stopPropagation();" class="flex items-center text-amber-400 hover:text-amber-300 transition-colors bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3"></i></span>` : ''}
                     </div>
                     ${projectName && !isSubtask ? `<div class="text-[10px] text-indigo-400/70 font-semibold flex items-center gap-1 mt-1 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Tâche de : ${projectName}</div>` : ''}
                     ${isSubtask && parentName ? `<div class="text-[10px] text-indigo-400/70 font-semibold flex items-center gap-1 mt-1 truncate"><i data-lucide="corner-down-right" class="w-3 h-3 shrink-0"></i> Sous-tâche de : ${parentName}</div>` : ''}
@@ -925,14 +927,15 @@ const App = {
     },
 
     renderSettings() {
-        const renderList = (type, placeholder, isNumber) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Filtres' : '<i data-lucide="tag" class="text-indigo-400 w-4 h-4"></i> Catégories'}</h3><div class="flex gap-2 mb-4"><input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}', ${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
+        const renderList = (type, placeholder, isNumber) => `<div class="bg-[#1A1D24] rounded-2xl p-5 border border-gray-800 mb-6"><h3 class="font-bold text-white mb-4 uppercase text-sm flex items-center gap-2">${type === 'times' ? '<i data-lucide="clock" class="text-cyan-400 w-4 h-4"></i> Temps disponibles (min)' : type === 'locations' ? '<i data-lucide="map-pin" class="text-emerald-400 w-4 h-4"></i> Filtres' : '<i data-lucide="tag" class="text-indigo-400 w-4 h-4"></i> Catégories'}</h3><div class="flex gap-2 mb-4"><input type="${isNumber ? 'number' : 'text'}" id="setting-input-${type}" placeholder="${placeholder}" class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-2 text-sm text-white focus:outline-none border border-gray-800"><button onclick="App.addSetting('${type}', 'setting-input-${type}')" class="bg-cyan-500 text-black px-4 py-2 rounded-xl text-sm font-bold">+</button></div><div class="flex flex-wrap gap-2">${AppState.settings[type].map(item => `<div class="flex items-center gap-2 bg-[#0D0F12] border border-gray-800 px-3 py-1.5 rounded-lg text-sm text-gray-300"><span>${item}</span><button onclick="App.removeSetting('${type}',${isNumber ? item : `'${item}'`})" class="text-gray-500 hover:text-red-500 ml-1"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')}</div></div>`;
+        
         return `
         <div class="space-y-4">
             <div class="px-1 mb-6"><h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="settings" class="text-gray-400"></i> Paramètres</h2><p class="text-sm text-gray-500 mt-1">Personnalise les filtres de ton application.</p></div>
             
             ${renderList('times', 'Ex: 45', true)}
             ${renderList('locations', 'Ex: Garage, Fatigue...', false)}
-
+            
             <div class="mt-8 mb-8">
                 <button onclick="App.logout()" class="w-full py-4 rounded-xl bg-red-500/10 text-red-500 font-bold border border-red-500/30 hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center gap-2">
                     <i data-lucide="log-out" class="w-5 h-5"></i> Se déconnecter
@@ -1152,7 +1155,7 @@ const App = {
                     </div>
                 </div>`;
             }
-            } else if (AppState.editPrompt) {
+        } else if (AppState.editPrompt) {
             const d = AppState.editPrompt.data; const dCatId = d.categoryId || '';
             modalContainer.innerHTML = `
                 <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeEdit()">
