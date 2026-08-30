@@ -338,20 +338,64 @@ const App = {
     },
     closeEdit() { AppState.editPrompt = null; this.render(); },
     
-    openNote(type, id) {
-        let itemData = type === 'category' ? AppState.categories.find(c => c.id === id) : AppState.projects.find(p => p.id === id);
-        AppState.notePrompt = { type, id, parentId: null, note: itemData.note || '' };
-        AppState.activeMenu = null; this.render();
+        openNote(type, id, parentId = null) {
+        let itemData;
+        if (type === 'category') itemData = AppState.categories.find(c => c.id === id);
+        else if (type === 'project') itemData = AppState.projects.find(p => p.id === id);
+        else if (type === 'task') {
+            if (parentId && parentId !== 'null') {
+                const parent = AppState.tasks.find(t => t.id === parentId);
+                itemData = parent ? parent.subtasks.find(s => s.id === id) : null;
+            } else {
+                itemData = AppState.tasks.find(t => t.id === id);
+            }
+        }
+        
+        if (itemData) {
+            const hasNote = itemData.note && itemData.note.trim() !== '';
+            // Si la note existe, on la met en mode "view", sinon directement en "edit"
+            AppState.notePrompt = { type, id, parentId, note: itemData.note || '', mode: hasNote ? 'view' : 'edit' };
+            AppState.activeMenu = null; 
+            this.render();
+        }
     },
+
+     editNote() {
+        if (AppState.notePrompt) { AppState.notePrompt.mode = 'edit'; this.render(); }
+    },
+
+     deleteNote() {
+        if (confirm("Supprimer cette note ?")) {
+            const { type, id, parentId } = AppState.notePrompt;
+            this.updateItemNote(type, id, parentId, '');
+            AppState.notePrompt = null;
+            this.save();
+        }
+    },
+
     closeNote() { AppState.notePrompt = null; this.render(); },
     
-    saveNote(event) {
+   saveNote(event) {
         event.preventDefault();
-        const { type, id } = AppState.notePrompt;
+        const { type, id, parentId } = AppState.notePrompt;
         const noteText = document.getElementById('edit-note-text').value;
-        if (type === 'category') AppState.categories = AppState.categories.map(c => c.id === id ? { ...c, note: noteText } : c);
-        else if (type === 'project') AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, note: noteText } : p);
-        AppState.notePrompt = null; this.save();
+        this.updateItemNote(type, id, parentId, noteText);
+        AppState.notePrompt = null; 
+        this.save();
+    },
+
+    updateItemNote(type, id, parentId, noteText) {
+        if (type === 'category') {
+            AppState.categories = AppState.categories.map(c => c.id === id ? { ...c, note: noteText } : c);
+        } else if (type === 'project') {
+            AppState.projects = AppState.projects.map(p => p.id === id ? { ...p, note: noteText } : p);
+        } else if (type === 'task') {
+            if (parentId && parentId !== 'null') {
+                AppState.tasks = AppState.tasks.map(t => t.id === parentId ? { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, note: noteText } : s) } : t);
+            } else {
+                AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, note: noteText } : t);
+            }
+        }
     },
 
     saveEdit(event) {
