@@ -2,6 +2,11 @@
 // HISTORIQUE DES MISES À JOUR (My Task)
 // ==========================================
 export const RELEASE_HISTORY = [
+        {
+        version: "1.7.3",
+        title: "Notes & Timeline Dynamique",
+        notes: "• 📝 Les notes ont désormais leur propre fenêtre d'affichage dédiée à la lecture (cliquez sur l'icône jaune).<br>• ⏰ La ligne rouge du temps s'anime intelligemment et traverse désormais vos tâches en cours de réalisation sur le calendrier."
+    },
     {
         version: "1.7.2.1",
         title: "Changement mineur",
