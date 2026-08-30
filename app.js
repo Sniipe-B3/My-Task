@@ -715,27 +715,71 @@ const App = {
 
         let timelineHtml = `<div class="relative space-y-3 mt-2 pl-2 border-l border-gray-800">`;
 
-        if (AppState.selectedDate === getTodayString()) {
-            const now = new Date();
-            const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-            timelineHtml += `
-            <div class="relative flex items-center mb-4 -ml-4 z-10">
+        // === DESCRIPTIF: DÉTECTION DU TEMPS ACTUEL ===
+        // On récupère l'heure et on convertit tout en minutes pour faciliter les mathématiques (ex: 14h30 = 870 minutes)
+        const now = new Date();
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+        const isToday = AppState.selectedDate === getTodayString();
+        let timeLineDrawn = false; // Mémorise si on a déjà dessiné la ligne ou non.
+
+        // Petite fonction HTML qui génère la ligne rouge toute seule, pour la placer "entre" deux éléments
+        const getStandaloneRedLine = () => `
+            <div class="relative flex items-center mb-4 -ml-4 z-20">
                 <div class="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
-                <div class="flex-1 h-px bg-red-500/50"></div>
-                <span class="absolute right-0 -top-2.5 text-[10px] font-black text-red-500 bg-[#0D0F12] pl-2">${timeStr}</span>
+                <div class="flex-1 h-px bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)]"></div>
+                <span class="absolute right-0 -top-2.5 text-[10px] font-black text-white bg-red-500 px-1.5 py-0.5 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.4)]">${timeStr}</span>
             </div>`;
-        }
 
         if (dayEvents.length === 0) {
+            // === DESCRIPTIF: SCÉNARIO SI AUCUNE TÂCHE AUJOURD'HUI ===
+            if (isToday) timelineHtml += getStandaloneRedLine();
             timelineHtml += `<div class="py-10 text-center text-gray-500 text-sm font-semibold">Rien de prévu à cette date.</div>`;
         } else {
             dayEvents.forEach(ev => {
+                // === DESCRIPTIF: CONVERSION DES HORAIRES DE LA TÂCHE ===
+                let startH, startM, duration;
+                if (ev.type === 'task') {
+                    [startH, startM] = (ev.scheduledTime || '23:59').split(':').map(Number);
+                    duration = ev.duration || 15;
+                } else {
+                    [startH, startM] = ev.start.split(':').map(Number);
+                    duration = ev.duration;
+                }
+                const startMin = startH * 60 + startM;
+                const endMin = startMin + duration;
+
+                // === DESCRIPTIF: SCÉNARIO 1 - LA LIGNE ROUGE EST AU-DESSUS (Avant) ===
+                // L'heure actuelle est inférieure à l'heure de la tâche, on dessine la ligne AVANT la tâche.
+                if (isToday && !timeLineDrawn && currentMinutes < startMin) {
+                    timelineHtml += getStandaloneRedLine();
+                    timeLineDrawn = true;
+                }
+
+                // === DESCRIPTIF: SCÉNARIO 2 - LA LIGNE ROUGE EST SUR LA TÂCHE (Pendant) ===
+                // L'heure est comprise entre le début et la fin de cette tâche
+                let inlineRedLine = '';
+                if (isToday && !timeLineDrawn && currentMinutes >= startMin && currentMinutes < endMin) {
+                    // On calcule la progression pour la placer en hauteur via le CSS (ex: top: 50%)
+                    let progress = (currentMinutes - startMin) / duration;
+                    progress = Math.max(0.10, Math.min(0.90, progress)); // Empêche la ligne de trop déborder en haut/bas de la case
+                    
+                    inlineRedLine = `
+                    <div class="absolute w-full flex items-center z-20 pointer-events-none" style="top: ${progress * 100}%; left: -4px;">
+                        <div class="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
+                        <div class="flex-1 h-px bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)]"></div>
+                        <span class="absolute right-0 -top-2.5 text-[10px] font-black text-white bg-red-500 px-1.5 py-0.5 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.4)]">${timeStr}</span>
+                    </div>`;
+                    timeLineDrawn = true;
+                }
+
                 if (ev.type === 'task') {
                     const isDone = ev.status === 'done';
                     const timeDisp = ev.scheduledTime || '--:--';
                     timelineHtml += `
                     <div class="relative pl-6 pb-2">
                         <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-cyan-500 border border-[#0D0F12]'}"></div>
+                        ${inlineRedLine} <!-- Injection de la ligne rouge ICI, uniquement si on est "pendant" la tâche -->
                         <div class="bg-[#1A1D24] p-3 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} cursor-pointer hover:border-gray-700 transition-colors" onclick="App.openTaskModal('${ev.id}'${ev.isSubtask ? `, '${ev.parentId}'` : ''})">
                             <div class="flex justify-between items-start mb-1">
                                 <div class="flex items-center gap-2">
@@ -759,6 +803,7 @@ const App = {
                     timelineHtml += `
                     <div class="relative pl-6 pb-2">
                         <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full bg-indigo-500 border border-[#0D0F12] animate-pulse"></div>
+                        ${inlineRedLine} <!-- Injection de la ligne rouge ICI pour les créneaux libres -->
                         <div class="bg-indigo-500/10 p-3 rounded-2xl border border-indigo-500/30">
                             <div class="flex justify-between items-start mb-2">
                                 <span class="text-xs font-black text-indigo-400">${ev.start} - ${ev.end}</span>
@@ -775,6 +820,13 @@ const App = {
                     </div>`;
                 }
             });
+            
+            // === DESCRIPTIF: SCÉNARIO 3 - LA LIGNE ROUGE EST EN DESSOUS (Après) ===
+            // On a vérifié toutes les tâches, et la ligne n'est toujours pas dessinée. 
+            // Cela signifie qu'il est plus tard que la fin de toutes les tâches. On trace à la fin !
+            if (isToday && !timeLineDrawn && dayEvents.length > 0) {
+                timelineHtml += getStandaloneRedLine();
+            }
         }
         timelineHtml += `</div>`;
 
