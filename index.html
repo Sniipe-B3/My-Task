@@ -5,21 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>My Task</title>
     
-    <!-- Indique que c'est une App Web -->
+    <!-- Indique que c'est une App Web (Plein Écran) -->
     <link rel="manifest" href="manifest.json">
-    
-    <!-- Paramètres pour forcer le plein écran (Android & iOS) -->
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#0D0F12">
     
-    <!-- Scripts externes -->
+    <!-- Outils de design (Sans ça, l'écran reste noir !) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    
-    <!-- Ton fichier de style -->
-    <link rel="stylesheet" href="style.css">
 </head>
 <body class="bg-[#0D0F12] text-white antialiased font-sans">
     
@@ -28,8 +23,8 @@
         <div id="app-content" class="h-full p-4"></div>
     </div>
 
-        <!-- Le fichier central qui appellera les autres -->
+    <!-- Le fichier central qui lance les modules -->
     <script type="module" src="app.js"></script>
-</body>
     
+</body>
 </html>
