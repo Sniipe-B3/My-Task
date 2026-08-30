@@ -650,7 +650,7 @@ const App = {
             dates.push({ date: dStr, label: dayName, num: d.getDate(), month: monthName, isToday: dStr === getTodayString() });
         }
 
-        let datesHtml = `<div class="flex gap-2 overflow-x-auto pb-4 no-scrollbar scroll-smooth" id="calendar-date-picker">`;
+        let datesHtml = `<div class="flex gap-2 overflow-x-auto pb-4 no-scrollbar" id="calendar-date-picker">`;
         dates.forEach(d => {
             const isSelected = d.date === AppState.selectedDate;
             datesHtml += `
@@ -975,6 +975,11 @@ const App = {
     // 5. AFFICHAGE GLOBAL ET MODALS
     // ==========================================
     render() {
+        // === DESCRIPTIF: SAUVEGARDE DU SCROLL (Anti-saut) ===
+        const oldPicker = document.getElementById('calendar-date-picker');
+        const savedScroll = oldPicker ? oldPicker.scrollLeft : 0;
+        const wasOnCalendar = oldPicker !== null; // On vérifie si on était DÉJÀ sur cet onglet
+
         const content = document.getElementById('app-content');
         
         if (!AppState.currentUser) {
@@ -1209,24 +1214,27 @@ const App = {
         
         lucide.createIcons();
 
-        // === DESCRIPTIF : SCROLL AUTOMATIQUE DU CALENDRIER ===
-        // On vérifie si on est bien sur l'onglet calendrier
+        // === DESCRIPTIF : SCROLL AUTOMATIQUE INTELLIGENT ===
         if (AppState.activeTab === 'calendar') {
-            // On utilise setTimeout (même avec 10 millisecondes) pour être SÛR que le navigateur 
-            // a fini d'afficher le HTML sur l'écran avant d'essayer de le faire défiler.
-            setTimeout(() => {
-                const picker = document.getElementById('calendar-date-picker'); // La barre entière
-                const selectedDate = document.getElementById('selected-calendar-date'); // La date cliquée
+            const picker = document.getElementById('calendar-date-picker');
+            const selectedDate = document.getElementById('selected-calendar-date');
+            
+            if (picker && selectedDate) {
+                const centerPosition = selectedDate.offsetLeft - (picker.clientWidth / 2) + (selectedDate.clientWidth / 2);
                 
-                if (picker && selectedDate) {
-                    // Cette formule mathématique calcule exactement le centre de l'écran 
-                    // pour que la date sélectionnée apparaisse toujours bien au milieu de la barre !
-                    picker.scrollTo({
-                        left: selectedDate.offsetLeft - (picker.clientWidth / 2) + (selectedDate.clientWidth / 2),
-                        behavior: 'smooth' // Rendu fluide et agréable à l'oeil
-                    });
+                if (wasOnCalendar) {
+                    // Si on était DÉJÀ sur le calendrier, on remet le scroll où il était INSTANTANÉMENT
+                    picker.scrollLeft = savedScroll;
+                    
+                    // Puis on glisse doucement vers la nouvelle date cliquée
+                    setTimeout(() => {
+                        picker.scrollTo({ left: centerPosition, behavior: 'smooth' });
+                    }, 10);
+                } else {
+                    // Si on vient d'un autre onglet, on centre directement la date actuelle, sans animation (instantané)
+                    picker.scrollLeft = centerPosition;
                 }
-            }, 10);
+            }
         }
     },
     
