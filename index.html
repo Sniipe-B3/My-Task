@@ -3,28 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>My Task</title>
-    
-    <!-- Indique que c'est une App Web (Plein Écran) -->
-    <link rel="manifest" href="manifest.json">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#0D0F12">
-    
-    <!-- Outils de design (Sans ça, l'écran reste noir !) -->
+    <title>Test My Task</title>
+    <!-- On charge juste le design -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body class="bg-[#0D0F12] text-white antialiased font-sans">
+<body class="bg-[#0D0F12] text-white flex flex-col items-center justify-center h-screen p-4">
     
-    <!-- C'est ici que ui.js va injecter toute l'application -->
-    <div id="app-container" class="relative min-h-screen w-full max-w-md mx-auto bg-[#0D0F12] overflow-x-hidden pb-20">
-        <div id="app-content" class="h-full p-4"></div>
+    <div class="p-8 bg-red-600 text-white rounded-xl text-center w-full max-w-sm">
+        <h1 class="text-3xl font-bold mb-4">ALERTE ROUGE</h1>
+        <p class="font-medium">Si tu vois cet écran, c'est que le HTML fonctionne parfaitement et que GitHub se met bien à jour !</p>
     </div>
 
-    <!-- Le fichier central qui lance les modules -->
-    <script type="module" src="app.js?v=2"></script>
+    <!-- ON DÉSACTIVE LE JAVASCRIPT EXPRÈS POUR CE TEST -->
+    <!-- <script type="module" src="app.js"></script> -->
     
 </body>
 </html>
