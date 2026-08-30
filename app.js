@@ -654,7 +654,9 @@ const App = {
         dates.forEach(d => {
             const isSelected = d.date === AppState.selectedDate;
             datesHtml += `
-            <div onclick="App.selectDate('${d.date}')" class="flex flex-col items-center justify-center min-w-[55px] p-2 rounded-2xl cursor-pointer transition-all border ${isSelected ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]' : d.isToday ? 'bg-[#1A1D24] border-gray-600' : 'bg-[#0D0F12] border-gray-800 hover:border-gray-700'}">
+            <!-- === DESCRIPTIF : AJOUT DE L'ID === -->
+            <!-- J'ai ajouté 'id="selected-calendar-date"' uniquement si isSelected est vrai. Cela nous servira de repère pour le scroll. -->
+            <div ${isSelected ? 'id="selected-calendar-date"' : ''} onclick="App.selectDate('${d.date}')" class="flex flex-col items-center justify-center min-w-[55px] p-2 rounded-2xl cursor-pointer transition-all border ${isSelected ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]' : d.isToday ? 'bg-[#1A1D24] border-gray-600' : 'bg-[#0D0F12] border-gray-800 hover:border-gray-700'}">
                 <span class="text-[10px] font-bold uppercase ${isSelected ? 'text-black' : d.isToday ? 'text-cyan-400' : 'text-gray-500'}">${d.label}</span>
                 <span class="text-lg font-black ${isSelected ? 'text-black' : 'text-white'}">${d.num}</span>
                 <span class="text-[9px] font-bold uppercase ${isSelected ? 'text-black' : 'text-gray-500'}">${d.month}</span>
@@ -1204,7 +1206,28 @@ const App = {
             const btn=document.getElementById('nav-'+tab.id);
             if(btn) btn.className=`flex flex-col items-center gap-1 transition-all ${AppState.activeTab===tab.id?tab.color:'text-gray-500'}`;
         });
+        
         lucide.createIcons();
+
+        // === DESCRIPTIF : SCROLL AUTOMATIQUE DU CALENDRIER ===
+        // On vérifie si on est bien sur l'onglet calendrier
+        if (AppState.activeTab === 'calendar') {
+            // On utilise setTimeout (même avec 10 millisecondes) pour être SÛR que le navigateur 
+            // a fini d'afficher le HTML sur l'écran avant d'essayer de le faire défiler.
+            setTimeout(() => {
+                const picker = document.getElementById('calendar-date-picker'); // La barre entière
+                const selectedDate = document.getElementById('selected-calendar-date'); // La date cliquée
+                
+                if (picker && selectedDate) {
+                    // Cette formule mathématique calcule exactement le centre de l'écran 
+                    // pour que la date sélectionnée apparaisse toujours bien au milieu de la barre !
+                    picker.scrollTo({
+                        left: selectedDate.offsetLeft - (picker.clientWidth / 2) + (selectedDate.clientWidth / 2),
+                        behavior: 'smooth' // Rendu fluide et agréable à l'oeil
+                    });
+                }
+            }, 10);
+        }
     },
     
     async init() {
