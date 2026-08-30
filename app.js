@@ -418,6 +418,43 @@ const App = {
     },
 
     // --- INTERFACE ---
+    renderAuth() {
+        return `
+        <div class="flex flex-col items-center justify-center min-h-[90vh] px-6 bg-[#0D0F12]">
+            <div class="w-full max-w-sm bg-[#1A1D24] p-8 rounded-3xl border border-gray-800 shadow-2xl">
+                <div class="flex justify-center mb-6">
+                    <div class="p-4 bg-cyan-500/20 rounded-full border border-cyan-500/30">
+                        <i data-lucide="zap" class="w-8 h-8 text-cyan-400 fill-cyan-400"></i>
+                    </div>
+                </div>
+                <h2 class="text-2xl font-black text-center text-white mb-2">${AppState.authMode === 'login' ? 'Connexion' : 'Créer un compte'}</h2>
+                <p class="text-sm text-gray-500 text-center mb-8">My Task Cloud</p>
+                
+                ${AppState.authError ? `<div class="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-400 text-center font-bold">${AppState.authError}</div>` : ''}
+                ${AppState.authMessage ? `<div class="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-400 text-center font-bold">${AppState.authMessage}</div>` : ''}
+
+                <form onsubmit="App.handleAuth(event)" class="space-y-4">
+                    <div>
+                        <input type="email" id="auth-email" placeholder="Email" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <input type="password" id="auth-password" placeholder="Mot de passe" required class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-white border border-gray-800 focus:border-cyan-500 focus:outline-none">
+                        ${AppState.authMode === 'login' ? `<button type="button" onclick="App.resetPassword()" class="text-[10px] text-gray-500 hover:text-cyan-400 mt-2 block w-full text-right transition-colors">Mot de passe oublié ?</button>` : ''}
+                    </div>
+                    <button type="submit" class="w-full py-3 mt-2 rounded-xl bg-cyan-500 text-black font-bold uppercase hover:bg-cyan-400 transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+                        ${AppState.authMode === 'login' ? 'Se connecter' : 'S\'inscrire'}
+                    </button>
+                </form>
+                <div class="mt-6 text-center">
+                    <button onclick="App.toggleAuthMode()" class="text-xs text-gray-500 hover:text-cyan-400">
+                        ${AppState.authMode === 'login' ? 'Pas de compte ? Crées-en un ici.' : 'Déjà un compte ? Connecte-toi.'}
+                    </button>
+                </div>
+            </div>
+        </div>
+        `;
+    },
+
     renderNavbar(activeTab) {
         let container = document.getElementById('app-container');
         let nav = document.getElementById('main-nav');
@@ -462,7 +499,7 @@ const App = {
         if (!modalContainer) { modalContainer = document.createElement('div'); modalContainer.id = 'modal-container'; document.getElementById('app-container').appendChild(modalContainer); }
         
         // --- GESTION DES MENUS ET MODALES ---
-        if (AppState.activeMenu) {
+    if (AppState.activeMenu) {
             modalContainer.innerHTML = `
                 <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeMenu()">
                     <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
@@ -541,6 +578,15 @@ const App = {
     },
 
     render() {
+        if (!AppState.currentUser) {
+            const nav = document.getElementById('main-nav');
+            if (nav) nav.remove();
+            const content = document.getElementById('app-content');
+            if (content) content.innerHTML = this.renderAuth();
+            if (window.lucide) lucide.createIcons();
+            return;
+        }
+
         this.renderNavbar(AppState.activeTab);
         this.renderContent(AppState);
     },
@@ -571,7 +617,7 @@ const App = {
                 
                 this.checkMissedTasks();
                 this.render();
-                        } else {
+            } else {
                 AppState.currentUser = null;
                 this.render();
             }
