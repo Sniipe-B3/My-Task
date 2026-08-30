@@ -3,6 +3,11 @@
 // ==========================================
 export const RELEASE_HISTORY = [
     {
+        version: "1.7.2.1",
+        title: "Changement mineur",
+        notes: "• Déplacement de l'historique des mises à jours se trouvant désormais tout en bas de l'onglet Paramètres."
+    },
+    {
         version: "1.7.2",
         title: "Historique & Calendrier Interactif",
         notes: "• 📜 L'historique complet des mises à jour s'affiche correctement dans les paramètres.<br>• ✅ Ajout des cases à cocher pour valider les tâches directement depuis le calendrier.<br>• 📝 Retour de la petite icône 'note' quand une tâche possède une description."
