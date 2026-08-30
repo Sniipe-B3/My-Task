@@ -3,11 +3,6 @@
 // ==========================================
 export const RELEASE_HISTORY = [
     {
-        version: "1.7.2.2",
-        title: "TEST",
-        notes: "• TEST"
-    },
-    {
         version: "1.7.2.1",
         title: "Changement mineur",
         notes: "• Déplacement de l'historique des mises à jours se trouvant désormais tout en bas de l'onglet Paramètres."
