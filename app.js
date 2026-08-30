@@ -888,18 +888,18 @@ const App = {
             
             ${renderList('times', 'Ex: 45', true)}
             ${renderList('locations', 'Ex: Garage, Fatigue...', false)}
-            
-            <div class="mt-8 space-y-3 mb-4">
-                <button onclick="App.openUpdateModal('all')" class="w-full py-4 rounded-xl bg-cyan-500/10 text-cyan-400 font-bold border border-cyan-500/30 hover:bg-cyan-500 hover:text-black transition-colors flex items-center justify-center gap-2">
-                    <i data-lucide="sparkles" class="w-5 h-5"></i> Historique des MAJ (v${APP_VERSION})
-                </button>
-                
+
+            <div class="mt-8 mb-8">
                 <button onclick="App.logout()" class="w-full py-4 rounded-xl bg-red-500/10 text-red-500 font-bold border border-red-500/30 hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center gap-2">
                     <i data-lucide="log-out" class="w-5 h-5"></i> Se déconnecter
                 </button>
             </div>
             
-            <div class="mb-4 flex justify-center"><span class="text-xs font-bold text-gray-600 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800">My Task v${APP_VERSION}</span></div>
+            <div class="mb-4 flex justify-center">
+                <button onclick="App.openUpdateModal('all')" class="text-xs font-bold text-gray-500 bg-[#1A1D24] px-4 py-2 rounded-full border border-gray-800 hover:border-cyan-500/50 hover:text-cyan-400 transition-colors flex items-center gap-2 shadow-sm">
+                    My Task v${APP_VERSION} <i data-lucide="info" class="w-3.5 h-3.5"></i>
+                </button>
+            </div>
         </div>`;
     },
     
