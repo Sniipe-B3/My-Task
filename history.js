@@ -3,6 +3,11 @@
 // ==========================================
 export const RELEASE_HISTORY = [
         {
+        version: "1.7.4",
+        title: "Durée Libre & Flexibilité",
+        notes: "• ⏱️ Fini les temps prédéfinis ! Vous pouvez désormais saisir la durée exacte de vos tâches à la minute près (jusqu'à 10h maximum).<br>• 🧹 Le moteur d'action et les paramètres ont été épurés pour refléter cette liberté totale."
+    },
+        {
         version: "1.7.3",
         title: "Notes & Timeline Dynamique",
         notes: "• 📝 Les notes ont désormais leur propre fenêtre d'affichage dédiée à la lecture (cliquez sur l'icône jaune).<br>• ⏰ La ligne rouge du temps s'anime intelligemment et traverse désormais vos tâches en cours de réalisation sur le calendrier."
