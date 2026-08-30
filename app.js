@@ -106,5 +106,6 @@ const App = {
 window.App = App;
 window.AppState = AppState;
 
-// Démarrage de l'application quand la page est chargée
-window.onload = () => App.init();
+// Démarrage direct de l'application
+App.init();
+
