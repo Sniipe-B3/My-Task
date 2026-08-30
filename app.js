@@ -46,6 +46,26 @@ const RELEASE_HISTORY = [
         version: "1.6.4",
         title: "Changement de Nom & UI",
         notes: "• 🏷️ OS de Vie devient officiellement <b>My Task</b> !"
+    },
+    {
+        version: "1.6.3",
+        title: "PWA Plein Ecran",
+        notes: "• 📱 L'application s'installe nativement sur l'écran d'accueil sans barre de recherche (Plus d'erreur 500)."
+    },
+    {
+        version: "1.6.2",
+        title: "Confort",
+        notes: "• 👀 Bouton pour afficher/masquer le mot de passe.<br>• 📢 Fenêtre des nouveautés au démarrage."
+    },
+{
+        version: "1.6.1",
+        title: "Oubli de MDP",
+        notes: "• 🔒 Ajout de la réinitialisation par email."
+    },
+    {
+        version: "1.6.0",
+        title: "Sécurité",
+        notes: "• ☁️ Synchronisation Cloud via compte privé Firebase."
     }
 ];
 
