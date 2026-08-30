@@ -101,6 +101,13 @@ const App = {
         });
     }
 };
+    init() {
+        const content = document.getElementById('app-content');
+        if (content) {
+            content.innerHTML = `<div class="flex flex-col items-center justify-center h-full text-cyan-500"><i data-lucide="cloud-cog" class="w-12 h-12 animate-pulse mb-4"></i><span class="text-sm font-bold tracking-widest uppercase">TEST D'AFFICHAGE REUSSI</span></div>`;
+            if (window.lucide) lucide.createIcons();
+        }
+    }
 
 // Permettre au HTML de déclencher les fonctions (ex: onclick="App.setTab('home')")
 window.App = App;
@@ -108,4 +115,5 @@ window.AppState = AppState;
 
 // Démarrage direct de l'application
 App.init();
+
 
