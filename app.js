@@ -57,7 +57,6 @@ const AppState = {
     tasks: [],
     availabilities: [], 
     
-    homeTime: 30, homeLocations: [], homeSuggestions: [], homeSearched: false,
     expandedCategoryIds: [], 
     expandedProjectId: null, 
     showAddProject: false, showAddCategory: false,
@@ -213,7 +212,6 @@ const App = {
     },
     removeSetting(type, val) {
         AppState.settings[type] = AppState.settings[type].filter(item => item !== val);
-        if (type === 'locations') AppState.homeLocations = AppState.homeLocations.filter(l => l !== val);
         this.save();
     },
 
@@ -415,8 +413,6 @@ const App = {
     },
     selectModalPriority(btn) { this.applyPriorityStyle(btn, 'modal-priority-selected'); },
     
-    toggleHomeLocation(loc) { AppState.homeLocations.includes(loc) ? AppState.homeLocations = AppState.homeLocations.filter(l => l !== loc) : AppState.homeLocations.push(loc); this.render(); },
-
     // --- ACTIONS TÂCHES ---
     toggleTask(taskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,status:t.status==='todo'?'done':'todo'} : t); this.save(); },
     toggleSubtask(taskId,subtaskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,subtasks:t.subtasks.map(s=>s.id===subtaskId ? {...s,status:s.status==='todo'?'done':'todo'} : s)} : t); this.save(); },
