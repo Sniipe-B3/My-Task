@@ -1,7 +1,7 @@
 // ==========================================
 // SERVICE WORKER (Pour le mode hors-ligne absolu)
 // ==========================================
-const CACHE_NAME = 'my-task-cache-v1.7.6';
+const CACHE_NAME = 'my-task-cache-v1.7.7';
 
 // Fichiers indispensables à mettre en cache pour fonctionner hors-ligne
 const urlsToCache = [
@@ -12,6 +12,7 @@ const urlsToCache = [
   './history.js',
   './manifest.json',
   './icon.png',
+  './icon512.png',
   'https://cdn.tailwindcss.com',
   'https://unpkg.com/lucide@latest'
 ];
