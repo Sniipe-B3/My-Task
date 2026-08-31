@@ -269,8 +269,14 @@ const App = {
     clearTaskSchedule() {
         const dateInput = document.getElementById('modal-task-date');
         const timeInput = document.getElementById('modal-task-time');
-        if(dateInput) dateInput.value = '';
-        if(timeInput) timeInput.value = '';
+        if(dateInput) {
+            dateInput.value = '';
+            dateInput.type = 'text';
+        }
+        if(timeInput) {
+            timeInput.value = '';
+            timeInput.type = 'text';
+        }
     },
 
     saveTaskModal(event) {
@@ -1114,8 +1120,8 @@ const App = {
                                     <button type="button" onclick="App.clearTaskSchedule()" class="text-[10px] text-gray-500 hover:text-red-400 flex items-center gap-1 transition-colors"><i data-lucide="eraser" class="w-3 h-3"></i> Effacer</button>
                                 </div>
                                 <div class="flex gap-2">
-                                    <input type="date" id="modal-task-date" value="${d.scheduledDate || ''}" class="flex-1 bg-transparent text-sm text-white focus:outline-none border border-gray-800 rounded-lg px-2 py-2">
-                                    <input type="time" id="modal-task-time" value="${d.scheduledTime || ''}" class="w-24 bg-transparent text-sm text-white focus:outline-none border border-gray-800 rounded-lg px-2 py-2 text-center">
+                                    <input type="${d.scheduledDate ? 'date' : 'text'}" placeholder="Date" onfocus="this.type='date'" onblur="if(!this.value) this.type='text'" id="modal-task-date" value="${d.scheduledDate || ''}" class="flex-1 bg-transparent text-sm text-white focus:outline-none border border-gray-800 rounded-lg px-3 py-2 placeholder-gray-600">
+                                    <input type="${d.scheduledTime ? 'time' : 'text'}" placeholder="Heure" onfocus="this.type='time'" onblur="if(!this.value) this.type='text'" id="modal-task-time" value="${d.scheduledTime || ''}" class="w-24 bg-transparent text-sm text-white focus:outline-none border border-gray-800 rounded-lg px-2 py-2 text-center placeholder-gray-600">
                                 </div>
                             </div>
 
