@@ -418,7 +418,7 @@ const App = {
     toggleHomeLocation(loc) { AppState.homeLocations.includes(loc) ? AppState.homeLocations = AppState.homeLocations.filter(l => l !== loc) : AppState.homeLocations.push(loc); this.render(); },
 
     // --- ACTIONS TÂCHES ---
-    toggleTask(taskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,status:t.status==='todo'?'done':'todo'} : t); if(AppState.homeSearched) this.generateAction(); this.save(); },
+    toggleTask(taskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,status:t.status==='todo'?'done':'todo'} : t); this.save(); },
     toggleSubtask(taskId,subtaskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,subtasks:t.subtasks.map(s=>s.id===subtaskId ? {...s,status:s.status==='todo'?'done':'todo'} : s)} : t); this.save(); },
     addProjectTask(projectId){
         const input = document.getElementById(`project-quick-task-${projectId}`); if(!input || !input.value.trim()) return;
@@ -441,55 +441,6 @@ const App = {
             if (!hasActiveSubtasks && t.status !== 'done') allActive.push({...t, isSubtask: false, projectId: t.projectId});
         });
         return allActive;
-    },
-
-    generateAction() {
-        // === DESCRIPTIF: GESTION DE LA RECHERCHE (HOME) ===
-        // On récupère en direct la valeur tapée dans le champ par l'utilisateur au moment où il clique sur le bouton "Trouver quoi faire".
-        const timeInput = document.getElementById('home-time-input');
-        if (timeInput) {
-            let parsedTime = parseInt(timeInput.value);
-            if (isNaN(parsedTime) || parsedTime <= 0) parsedTime = 30; // On sécurise si c'est vide
-            if (parsedTime > 600) parsedTime = 600; // Limite stricte
-            AppState.homeTime = parsedTime;
-            timeInput.value = parsedTime; // On réécrit au propre dans le champ
-        }
-
-        const priorityWeights={'Urgence':4, 'Haute':3,'Moyenne':2,'Basse':1};
-        let allAvailable = [];
-        AppState.tasks.forEach(t => {
-            let hasActiveSubtasks = false;
-            if (t.subtasks && t.subtasks.length > 0) {
-                t.subtasks.forEach(s => {
-                    if (s.status !== 'done') {
-                        hasActiveSubtasks = true;
-                        const numSub = parseInt(s.name); let blocked = false;
-                        if (!isNaN(numSub) && numSub > 1) blocked = t.subtasks.some(otherS => parseInt(otherS.name) === (numSub - 1) && otherS.status !== 'done');
-                        if (!blocked && s.duration <= AppState.homeTime) {
-                            let matchLoc = AppState.homeLocations.length === 0 || (s.locations && s.locations.some(l => AppState.homeLocations.includes(l)));
-                            if (matchLoc) allAvailable.push({ ...s, isSubtask: true, parentId: t.id, parentName: t.name, projectId: t.projectId });
-                        }
-                    }
-                });
-            }
-            if (!hasActiveSubtasks && t.status !== 'done') {
-                const numTask = parseInt(t.name); let blocked = false;
-                if (!isNaN(numTask) && numTask > 1) blocked = AppState.tasks.some(otherT => otherT.projectId === t.projectId && parseInt(otherT.name) === (numTask - 1) && otherT.status !== 'done');
-                if (!blocked && t.duration <= AppState.homeTime) {
-                    let matchLoc = AppState.homeLocations.length === 0 || (t.locations && t.locations.some(l => AppState.homeLocations.includes(l)));
-                    if (matchLoc) allAvailable.push({ ...t, isSubtask: false, projectId: t.projectId });
-                }
-            }
-        });
-        
-        allAvailable.sort((a,b)=> {
-            const pA = priorityWeights[a.priority || 'Moyenne']; const pB = priorityWeights[b.priority || 'Moyenne']; 
-            if (pA !== pB) return pB - pA; 
-            const dA = a.duration || 15; const dB = b.duration || 15; 
-            if (dA !== dB) return dB - dA; 
-            if (a.isSubtask && !b.isSubtask) return -1; if (!a.isSubtask && b.isSubtask) return 1; return 0;
-        });
-        AppState.homeSuggestions = allAvailable.slice(0,5); AppState.homeSearched=true; this.render();
     },
 
     // --- LE CALENDRIER ---
@@ -823,40 +774,6 @@ const App = {
         `;
     },
 
-    renderHome() {
-        let allActive = this.getFlatActiveTasks().filter(t => !t.scheduledDate); 
-        
-        const priorityWeights={'Urgence':4, 'Haute':3,'Moyenne':2,'Basse':1};
-        const urgencies = [...allActive].sort((a, b) => {
-            const pA = priorityWeights[a.priority || 'Moyenne']; const pB = priorityWeights[b.priority || 'Moyenne']; if (pA !== pB) return pB - pA;
-            return (a.duration || 15) - (b.duration || 15);
-        }).slice(0, 5);
-
-        // === DESCRIPTIF: NOUVEL INPUT POUR LE TEMPS ===
-        // J'ai mis en place l'input number avec une valeur de base, le tout se déclenchant à l'appui du gros bouton
-        return `
-        <div class="space-y-8">
-            <section class="bg-[#1A1D24] rounded-3xl p-5 border border-gray-800/50 relative">
-                <h2 class="text-lg font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="play" class="text-cyan-400 fill-cyan-400 w-5 h-5"></i> Moteur d'Action</h2>
-                <p class="text-[10px] text-gray-500 mb-4 -mt-2">Recherche parmi les tâches non planifiées.</p>
-                <div class="space-y-4">
-                    <div>
-                        <label class="text-xs font-semibold text-gray-400 uppercase mb-2 block">Temps dispo (min)</label>
-                        <input type="number" id="home-time-input" min="1" max="600" value="${AppState.homeTime}" class="w-full bg-[#0D0F12] rounded-xl px-4 py-3 text-sm text-white border border-gray-800 focus:border-cyan-500 focus:outline-none" placeholder="Ex: 45 (max: 600 min)">
-                    </div>
-                    <div>
-                        <label class="text-xs font-semibold text-gray-400 uppercase mb-2 flex items-center justify-between"><span>Filtre(s) possible(s)</span><span class="text-[10px] text-gray-500 font-normal">Vide = Partout</span></label>
-                        <div class="flex gap-2 flex-wrap">${AppState.settings.locations.map(l=>`<button onclick="App.toggleHomeLocation('${l}')" class="flex-1 min-w-[70px] py-2 rounded-xl text-sm font-bold ${AppState.homeLocations.includes(l)?'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50':'bg-[#0D0F12] text-gray-400 border border-transparent'}">${l}</button>`).join('')}</div>
-                    </div>
-                    <button onclick="App.generateAction()" class="w-full py-4 mt-2 rounded-xl bg-cyan-500 text-black font-black text-lg uppercase transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)]">Trouver quoi faire</button>
-                </div>
-                ${AppState.homeSearched?`<div class="mt-6 pt-4 border-t border-gray-800"><h3 class="text-xs font-bold text-gray-500 mb-3 uppercase">Résultats (${AppState.homeSuggestions.length})</h3>${AppState.homeSuggestions.length>0?`<div class="space-y-2">${AppState.homeSuggestions.map(t=>this.renderTask(t, false, t.isSubtask ? t.parentId : null, t.isSubtask ? t.parentName : null)).join('')}</div>`:`<p class="text-sm text-gray-500 text-center py-4">Aucune tâche non planifiée ne correspond.</p>`}</div>`:''}
-            </section>
-            
-            <section><h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-1 flex items-center gap-2"><i data-lucide="alert-circle" class="text-red-400 w-4 h-4"></i> Priorités Non Planifiées</h2><div class="space-y-2">${urgencies.length>0?urgencies.map(t=>this.renderTask(t, false, t.isSubtask ? t.parentId : null, t.isSubtask ? t.parentName : null)).join(''):`<div class="bg-[#1A1D24] rounded-2xl p-6 text-center border border-gray-800 border-dashed"><p class="text-gray-500 text-sm">Tout est sous contrôle ou planifié.</p></div>`}</div></section>
-        </div>`;
-    },
-
     renderProjectItem(project) {
         const projectTasks = AppState.tasks.filter(t => t.projectId === project.id);
         let total=0, comp=0; 
@@ -948,12 +865,25 @@ const App = {
             html += `</div>`;
         }
 
-        const isolatedTasks = AppState.tasks.filter(t => !t.projectId);
-        if (isolatedTasks.length > 0) {
-            html += `<div class="mt-8 mb-4 px-1 flex items-center gap-2"><div class="h-px bg-gray-800 flex-1"></div><span class="text-xs font-bold text-gray-500 uppercase tracking-widest">Tâches Isolées</span><div class="h-px bg-gray-800 flex-1"></div></div>`;
+        // === DESCRIPTIF: TÂCHES NON PLANIFIÉES (L'ancien Moteur d'Action) ===
+        const priorityWeights = {'Urgence': 4, 'Haute': 3, 'Moyenne': 2, 'Basse': 1};
+        let unplanned = this.getFlatActiveTasks().filter(t => !t.scheduledDate);
+        
+        // Tri : du plus urgent au moins urgent, puis du plus rapide au moins rapide
+        unplanned.sort((a, b) => {
+            const pA = priorityWeights[a.priority || 'Moyenne'];
+            const pB = priorityWeights[b.priority || 'Moyenne'];
+            if (pA !== pB) return pB - pA;
+            return (a.duration || 15) - (b.duration || 15);
+        });
+
+        if (unplanned.length > 0) {
+            html += `<div class="mt-10 mb-4 px-1 flex items-center gap-2"><div class="h-px bg-gray-800 flex-1"></div><span class="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1"><i data-lucide="alert-circle" class="w-3 h-3"></i> Tâches non planifiées</span><div class="h-px bg-gray-800 flex-1"></div></div>`;
             html += `<div class="space-y-2">`;
-            html += isolatedTasks.map(t => this.renderTask(t, false)).join('');
+            html += unplanned.map(t => this.renderTask(t, false, t.isSubtask ? t.parentId : null, t.isSubtask ? t.parentName : null)).join('');
             html += `</div>`;
+        } else {
+            html += `<div class="mt-10 bg-[#1A1D24] rounded-2xl p-6 text-center border border-gray-800 border-dashed"><p class="text-gray-500 text-sm">Tout est planifié ou terminé !</p></div>`;
         }
 
         return html+'</div>';
@@ -1002,11 +932,10 @@ const App = {
         }
 
         if (!document.querySelector('nav')) {
-            document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 py-4 flex justify-around items-center z-20 pb-8"><button onclick="App.setTab('home')" id="nav-home" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="play-circle"></i><span class="text-[9px] font-bold tracking-wider uppercase">Action</span></button><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[9px] font-bold tracking-wider uppercase">Base</span></button><button onclick="App.setTab('calendar')" id="nav-calendar" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="calendar"></i><span class="text-[9px] font-bold tracking-wider uppercase">Calendrier</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[9px] font-bold tracking-wider uppercase">Paramètres</span></button></nav>`);
+            document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 py-4 flex justify-around items-center z-20 pb-8"><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[9px] font-bold tracking-wider uppercase">Base</span></button><button onclick="App.setTab('calendar')" id="nav-calendar" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="calendar"></i><span class="text-[9px] font-bold tracking-wider uppercase">Calendrier</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[9px] font-bold tracking-wider uppercase">Paramètres</span></button></nav>`);
         }
 
-        if (AppState.activeTab === 'home') content.innerHTML = this.renderHome();
-        else if (AppState.activeTab === 'calendar') content.innerHTML = this.renderCalendar();
+        if (AppState.activeTab === 'calendar') content.innerHTML = this.renderCalendar();
         else if (AppState.activeTab === 'projects') content.innerHTML = this.renderProjects();
         else if (AppState.activeTab === 'settings') content.innerHTML = this.renderSettings();
         
@@ -1213,7 +1142,6 @@ const App = {
         }
         
         const tabs=[
-            {id:'home',color:'text-cyan-400'},
             {id:'calendar',color:'text-amber-400'},
             {id:'projects',color:'text-indigo-400'},
             {id:'settings',color:'text-gray-200'}
