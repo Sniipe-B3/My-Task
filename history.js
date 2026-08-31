@@ -3,6 +3,11 @@
 // ==========================================
 export const RELEASE_HISTORY = [
     {
+        version: "1.7.7",
+        title: "PWA 100% Hors-Ligne",
+        notes: "• 🚀 <b>Application Native :</b> My Task s'installe désormais comme une véritable application sur votre téléphone.<br>• 📴 <b>Mode Hors-Ligne Absolu :</b> Le Service Worker met l'interface en cache. Lancez l'application instantanément, même sans aucune connexion internet (en mode avion). Firebase s'occupe de synchroniser vos données au retour du réseau.<br>• 🧹 <b>Nettoyage du code :</b> Suppression des variables obsolètes du moteur d'action et des fantômes du glisser-déposer pour une application plus légère."
+    },
+    {
         version: "1.7.6",
         title: "Refonte de l'Architecture",
         notes: "• 🧘 Minimalisme absolu : L'application se recentre sur l'essentiel avec 3 onglets (Base, Calendrier, Paramètres). L'onglet Action tire sa révérence.<br>• 🧠 Cerveau centralisé : Tes <i>Tâches non planifiées</i> t'attendent désormais sagement tout en bas de ta Base. Elles y sont intelligemment triées par urgence, puis par durée."
