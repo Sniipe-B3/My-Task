@@ -3,6 +3,11 @@
 // ==========================================
 export const RELEASE_HISTORY = [
     {
+        version: "1.7.5.1",
+        title: "Changement mineur",
+        notes: "• 📝 Ajout du texte (Date) & (Heure) lors de la modification d'une tâche."
+    },
+    {
         version: "1.7.5",
         title: "Navigation & Calendrier",
         notes: "• ⚡ Navigation éclair : Cliquez sur la date affichée sur une tâche pour être instantanément téléporté au bon jour dans le calendrier.<br>• 🗓️ Défilement intelligent : Le calendrier glisse désormais fluidement pour centrer automatiquement la date sélectionnée sans effet de saut."
