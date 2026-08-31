@@ -834,7 +834,7 @@ const App = {
             const isCatExpanded = AppState.expandedCategoryIds.includes(cat.id);
             
             html += `
-            <div class="bg-[#1A1D24] rounded-2xl border border-gray-800 mb-4 shadow-sm" ondragover="App.handleCategoryDragOver(event)" ondragleave="App.handleCategoryDragLeave(event)" ondrop="App.handleCategoryDrop(event, '${cat.id}')">
+            <div class="bg-[#1A1D24] rounded-2xl border border-gray-800 mb-4 shadow-sm">
                 <div onclick="App.toggleCategoryExpand('${cat.id}')" class="p-4 cursor-pointer hover:bg-[#1f232b] transition-colors rounded-t-2xl ${!isCatExpanded ? 'rounded-b-2xl' : ''}">
                     <div class="flex justify-between items-center">
                         <div class="flex items-center gap-3">
@@ -860,7 +860,7 @@ const App = {
         const orphanedProjects = AppState.projects.filter(p => !p.categoryId);
         if (orphanedProjects.length > 0) {
             html += `<div class="mt-8 mb-2 px-1 flex items-center gap-2"><div class="h-px bg-gray-800 flex-1"></div><span class="text-xs font-bold text-gray-500 uppercase tracking-widest">Sans Dossier</span><div class="h-px bg-gray-800 flex-1"></div></div>`;
-            html += `<div class="space-y-3" ondragover="App.handleCategoryDragOver(event)" ondragleave="App.handleCategoryDragLeave(event)" ondrop="App.handleCategoryDrop(event, 'null')">`;
+            html += `<div class="space-y-3">`;
             html += orphanedProjects.map(p => this.renderProjectItem(p)).join('');
             html += `</div>`;
         }
