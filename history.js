@@ -3,6 +3,11 @@
 // ==========================================
 export const RELEASE_HISTORY = [
     {
+        version: "1.7.6",
+        title: "Refonte de l'Architecture",
+        notes: "• 🧘 Minimalisme absolu : L'application se recentre sur l'essentiel avec 3 onglets (Base, Calendrier, Paramètres). L'onglet Action tire sa révérence.<br>• 🧠 Cerveau centralisé : Tes <i>Tâches non planifiées</i> t'attendent désormais sagement tout en bas de ta Base. Elles y sont intelligemment triées par urgence, puis par durée."
+    },
+    {
         version: "1.7.5.1",
         title: "Changement mineur",
         notes: "• 📝 Ajout du texte (Date) & (Heure) lors de la modification d'une tâche."
