@@ -56,6 +56,7 @@ const AppState = {
 
     activeTab: 'calendar', 
     selectedDate: getTodayString(), 
+    isCalendarExpanded: false,
 
     settings: getDefaultSettings(),
     categories: [],
@@ -446,10 +447,29 @@ const App = {
     },
 
     // --- LE CALENDRIER ---
+    toggleCalendarView() { 
+        AppState.isCalendarExpanded = !AppState.isCalendarExpanded; 
+        this.render(); 
+    },
+    
+    changeMonth(offset) {
+        const [y, m, d] = AppState.selectedDate.split('-').map(Number);
+        // On se place le 1er du mois cible pour éviter les sauts bizarres (ex: 31 Jan + 1 mois = 3 Mars)
+        const targetDate = new Date(y, m - 1 + offset, 1);
+        AppState.selectedDate = `${targetDate.getFullYear()}-${String(targetDate.getMonth()+1).padStart(2,'0')}-01`;
+        this.render();
+    },
+
     // NOUVEAU: Fonction pour changer la date ET basculer sur l'onglet calendrier
     goToCalendarDate(dateStr) {
         AppState.selectedDate = dateStr;
         this.setTab('calendar');
+    },
+
+    goToToday() {
+        AppState.selectedDate = getTodayString();
+        // Plus besoin de forcer isCalendarExpanded = false, on garde la vue actuelle de l'utilisateur !
+        this.render();
     },
 
     selectDate(dateStr) { AppState.selectedDate = dateStr; this.render(); },
@@ -602,32 +622,81 @@ const App = {
     renderCalendar() {
         const priorityColors = {'Urgence':'text-red-400 border-red-500/30', 'Haute':'text-purple-400 border-purple-500/30','Moyenne':'text-amber-400 border-amber-500/30','Basse':'text-blue-400 border-blue-500/30'};
 
-        const dates = [];
         const todayDate = new Date();
-        const startDay = new Date(todayDate); startDay.setDate(todayDate.getDate() - 3);
         const months = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Aoû','Sep','Oct','Nov','Déc'];
+        const fullMonths = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
         
-        for (let i=0; i<90; i++) {
-            const d = new Date(startDay); d.setDate(startDay.getDate() + i);
-            const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-            const dayName = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'][d.getDay()];
-            const monthName = months[d.getMonth()];
-            dates.push({ date: dStr, label: dayName, num: d.getDate(), month: monthName, isToday: dStr === getTodayString() });
-        }
+        let datesHtml = '';
 
-        let datesHtml = `<div class="flex gap-2 overflow-x-auto pb-4 no-scrollbar" id="calendar-date-picker">`;
-        dates.forEach(d => {
-            const isSelected = d.date === AppState.selectedDate;
-            datesHtml += `
-            <!-- === DESCRIPTIF : AJOUT DE L'ID === -->
-            <!-- J'ai ajouté 'id="selected-calendar-date"' uniquement si isSelected est vrai. Cela nous servira de repère pour le scroll. -->
-            <div ${isSelected ? 'id="selected-calendar-date"' : ''} onclick="App.selectDate('${d.date}')" class="flex flex-col items-center justify-center min-w-[55px] p-2 rounded-2xl cursor-pointer transition-all border ${isSelected ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]' : d.isToday ? 'bg-[#1A1D24] border-gray-600' : 'bg-[#0D0F12] border-gray-800 hover:border-gray-700'}">
-                <span class="text-[10px] font-bold uppercase ${isSelected ? 'text-black' : d.isToday ? 'text-cyan-400' : 'text-gray-500'}">${d.label}</span>
-                <span class="text-lg font-black ${isSelected ? 'text-black' : 'text-white'}">${d.num}</span>
-                <span class="text-[9px] font-bold uppercase ${isSelected ? 'text-black' : 'text-gray-500'}">${d.month}</span>
-            </div>`;
-        });
-        datesHtml += `</div>`;
+        if (!AppState.isCalendarExpanded) {
+            // VUE CLASSIQUE : Carrousel Horizontal étendu sur ~6 ans (de -1 an à +5 ans)
+            const dates = [];
+            const startDay = new Date(todayDate); 
+            startDay.setDate(todayDate.getDate() - 365); // On commence 1 an en arrière
+            
+            for (let i=0; i<2190; i++) { // Environ 6 ans de jours générés (ex: 2024 à 2030)
+                const d = new Date(startDay); d.setDate(startDay.getDate() + i);
+                const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                const dayName = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'][d.getDay()];
+                const monthName = months[d.getMonth()];
+                dates.push({ date: dStr, label: dayName, num: d.getDate(), month: monthName, isToday: dStr === getTodayString() });
+            }
+
+            datesHtml = `<div class="flex gap-2 overflow-x-auto pb-4 no-scrollbar" id="calendar-date-picker">`;
+            dates.forEach(d => {
+                const isSelected = d.date === AppState.selectedDate;
+                // Vérification de la présence d'événements pour ce jour
+                const hasEvents = AppState.tasks.some(t => t.scheduledDate === d.date || (t.subtasks && t.subtasks.some(s => s.scheduledDate === d.date))) || AppState.availabilities.some(a => a.date === d.date);
+
+                datesHtml += `
+                <div ${isSelected ? 'id="selected-calendar-date"' : ''} onclick="App.selectDate('${d.date}')" class="relative flex flex-col items-center justify-center min-w-[55px] p-2 rounded-2xl cursor-pointer transition-all border ${isSelected ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]' : d.isToday ? 'bg-[#1A1D24] border-gray-600' : 'bg-[#0D0F12] border-gray-800 hover:border-gray-700'}">
+                    <span class="text-[10px] font-bold uppercase ${isSelected ? 'text-black' : d.isToday ? 'text-cyan-400' : 'text-gray-500'}">${d.label}</span>
+                    <span class="text-lg font-black ${isSelected ? 'text-black' : 'text-white'}">${d.num}</span>
+                    <span class="text-[9px] font-bold uppercase ${isSelected ? 'text-black' : 'text-gray-500'}">${d.month}</span>
+                    ${hasEvents ? `<div class="absolute bottom-1 w-1 h-1 rounded-full ${isSelected ? 'bg-black/50' : 'bg-cyan-400'}"></div>` : ''}
+                </div>`;
+            });
+            datesHtml += `</div>`;
+        } else {
+            // VUE AGRANDIE : Grille Mensuelle
+            const [selY, selM, selD] = AppState.selectedDate.split('-').map(Number);
+            const firstDayOfMonth = new Date(selY, selM - 1, 1);
+            const daysInMonth = new Date(selY, selM, 0).getDate();
+            let startingDay = firstDayOfMonth.getDay() - 1; // 0 = Lundi
+            if (startingDay === -1) startingDay = 6; // Si c'est Dimanche
+            
+            datesHtml = `<div class="bg-[#1A1D24] p-4 rounded-3xl border border-gray-800 shadow-xl mb-4">
+                <div class="flex justify-between items-center mb-4">
+                    <button onclick="App.changeMonth(-1)" class="p-2 text-gray-500 hover:text-cyan-400 bg-[#0D0F12] rounded-lg border border-gray-800"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+                    <span class="text-sm font-black text-white uppercase tracking-widest">${fullMonths[selM-1]} ${selY}</span>
+                    <button onclick="App.changeMonth(1)" class="p-2 text-gray-500 hover:text-cyan-400 bg-[#0D0F12] rounded-lg border border-gray-800"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+                </div>
+                <div class="grid grid-cols-7 gap-1 text-center mb-2">
+                    ${['L','M','M','J','V','S','D'].map(d => `<div class="text-[10px] font-bold text-gray-500 uppercase">${d}</div>`).join('')}
+                </div>
+                <div class="grid grid-cols-7 gap-1">`;
+            
+            // Cases vides pour l'alignement
+            for (let i = 0; i < startingDay; i++) {
+                datesHtml += `<div></div>`;
+            }
+            // Cases des jours
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dStr = `${selY}-${String(selM).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
+                const isSelected = dStr === AppState.selectedDate;
+                const isToday = dStr === getTodayString();
+                
+                // Petit point cyan si des tâches/créneaux existent ce jour-là
+                const hasEvents = AppState.tasks.some(t => t.scheduledDate === dStr || (t.subtasks && t.subtasks.some(s => s.scheduledDate === dStr))) || AppState.availabilities.some(a => a.date === dStr);
+                
+                datesHtml += `
+                <div onclick="App.selectDate('${dStr}')" class="flex flex-col items-center justify-center p-2 rounded-xl cursor-pointer transition-all border ${isSelected ? 'bg-cyan-500 border-cyan-400 text-black shadow-[0_0_10px_rgba(6,182,212,0.4)]' : isToday ? 'bg-[#2a2f3a] border-gray-500 text-cyan-400' : 'bg-[#0D0F12] border-gray-800 text-white hover:border-gray-700 hover:bg-[#1f232b]'}">
+                    <span class="text-sm font-bold ${isSelected ? 'text-black' : ''}">${i}</span>
+                    <div class="w-1 h-1 mt-0.5 rounded-full ${hasEvents ? (isSelected ? 'bg-black/50' : 'bg-cyan-400') : 'bg-transparent'}"></div>
+                </div>`;
+            }
+            datesHtml += `</div></div>`;
+        }
 
         let dayEvents = [];
         
@@ -656,20 +725,22 @@ const App = {
             return timeA.localeCompare(timeB);
         });
 
-        let timelineHtml = `<div class="relative space-y-3 mt-2 pl-2 border-l border-gray-800">`;
+        // === DESCRIPTIF : GÉOMÉTRIE DE LA TIMELINE ===
+        // ml-16 crée un grand espace à gauche de la ligne. border-l dessine la ligne.
+        let timelineHtml = `<div class="relative space-y-3 mt-2 border-l border-gray-800 ml-16">`;
 
-        // === DESCRIPTIF: DÉTECTION DU TEMPS ACTUEL ===
         const now = new Date();
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
         const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
         const isToday = AppState.selectedDate === getTodayString();
         let timeLineDrawn = false; 
 
+        // === DESCRIPTIF : HEURE ROUGE INDÉPENDANTE ===
+        // On supprime la grande ligne (h-px), et on place le texte complètement à gauche (-left-[55px])
         const getStandaloneRedLine = () => `
-            <div class="relative flex items-center mb-4 -ml-4 z-20">
-                <div class="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
-                <div class="flex-1 h-px bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)]"></div>
-                <span class="absolute right-0 -top-2.5 text-[10px] font-black text-white bg-red-500 px-1.5 py-0.5 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.4)]">${timeStr}</span>
+            <div class="relative h-px mb-4 z-20">
+                <span class="absolute -left-[55px] w-12 text-[10px] font-black text-red-500 text-right -top-2 bg-[#1A1D24] px-1 rounded z-30">${timeStr}</span>
+                <div class="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="top: -4px;"></div>
             </div>`;
 
         if (dayEvents.length === 0) {
@@ -698,11 +769,12 @@ const App = {
                     let progress = (currentMinutes - startMin) / duration;
                     progress = Math.max(0.10, Math.min(0.90, progress)); 
                     
+                    // === DESCRIPTIF : HEURE ROUGE SUR UNE TÂCHE ===
+                    // Plus de ligne qui traverse l'écran, juste l'heure à gauche et le point sur la barre
                     inlineRedLine = `
-                    <div class="absolute w-full flex items-center z-20 pointer-events-none" style="top: ${progress * 100}%; left: -4px;">
-                        <div class="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
-                        <div class="flex-1 h-px bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)]"></div>
-                        <span class="absolute right-0 -top-2.5 text-[10px] font-black text-white bg-red-500 px-1.5 py-0.5 rounded-md shadow-[0_0_10px_rgba(239,68,68,0.4)]">${timeStr}</span>
+                    <div class="absolute w-full z-20 pointer-events-none" style="top: ${progress * 100}%;">
+                        <span class="absolute -left-[55px] w-12 text-[10px] font-black text-red-500 text-right bg-[#1A1D24] px-1 rounded z-30" style="margin-top: -8px;">${timeStr}</span>
+                        <div class="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="margin-top: -5px;"></div>
                     </div>`;
                     timeLineDrawn = true;
                 }
@@ -710,16 +782,35 @@ const App = {
                 if (ev.type === 'task') {
                     const isDone = ev.status === 'done';
                     const timeDisp = ev.scheduledTime || '--:--';
+                    
+                    let labelsHtml = '';
+                    let startHour = Math.floor(startMin / 60);
+                    let endHour = Math.ceil(endMin / 60);
+                    
+                    for (let h = startHour; h <= endHour; h++) {
+                        let posPercent = (((h * 60) - startMin) / duration) * 100;
+                        if (posPercent < 0) posPercent = 0;
+                        if (posPercent > 100) posPercent = 100;
+                        
+                        // Heures à gauche de la ligne (-left-[55px])
+                        labelsHtml += `<span class="absolute -left-[55px] w-12 text-[10px] font-bold text-gray-500 text-right bg-[#0D0F12] py-0.5" style="top: ${posPercent}%; margin-top: -8px; z-index: 5;">${String(h).padStart(2,'0')}h00</span>`;
+                    }
+                    
+                    let blockHeight = Math.max(80, duration * 2);
+
+                    // La tâche a un pl-8 pour se décoller de la ligne
                     timelineHtml += `
-                    <div class="relative pl-6 pb-2">
-                        <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-cyan-500 border border-[#0D0F12]'}"></div>
+                    <div class="relative pl-8 pb-2 transition-colors border border-transparent rounded-2xl flex flex-col" style="min-height: ${blockHeight}px;" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'task', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
+                        
+                        ${labelsHtml}
+                        
+                        <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-cyan-500 border border-[#0D0F12]'} z-10"></div>
                         ${inlineRedLine}
-                        <div class="bg-[#1A1D24] p-3 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} cursor-pointer hover:border-gray-700 transition-colors" onclick="App.openTaskModal('${ev.id}'${ev.isSubtask ? `, '${ev.parentId}'` : ''})">
+                        
+                        <div class="bg-[#1A1D24] flex-1 p-3 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} cursor-pointer hover:border-gray-700 transition-colors" onclick="App.openMenu(event, '${ev.isSubtask ? 'subtask' : 'task'}', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
                             <div class="flex justify-between items-start mb-1">
                                 <div class="flex items-center gap-2">
-                                    <button onclick="event.stopPropagation(); ${ev.isSubtask ? `App.toggleSubtask('${ev.parentId}','${ev.id}')` : `App.toggleTask('${ev.id}')`}" class="p-1 -ml-1 text-gray-500 hover:text-emerald-400 focus:outline-none">
-                                        <i data-lucide="${isDone ? 'check-circle-2' : 'circle'}" class="w-4 h-4 ${isDone ? 'text-emerald-500' : ''}"></i>
-                                    </button>
+                                    <button onclick="event.stopPropagation(); ${ev.isSubtask ? `App.toggleSubtask('${ev.parentId}','${ev.id}')` : `App.toggleTask('${ev.id}')`}" class="p-1 -ml-1 text-gray-500 hover:text-emerald-400 focus:outline-none"><i data-lucide="${isDone ? 'check-circle-2' : 'circle'}" class="w-4 h-4 ${isDone ? 'text-emerald-500' : ''}"></i></button>
                                     <span class="text-xs font-black text-cyan-400 ${isDone ? 'text-gray-500 line-through' : ''}">${timeDisp}</span>
                                 </div>
                                 <span class="px-1.5 py-0.5 rounded text-[8px] border bg-[#0D0F12] ${priorityColors[ev.priority || 'Moyenne']}">${ev.priority || 'Moyenne'}</span>
@@ -727,33 +818,47 @@ const App = {
                             <h4 class="text-sm font-bold text-white ${isDone ? 'line-through text-gray-500' : ''} ml-1">${ev.name}</h4>
                             <div class="flex items-center gap-2 mt-1.5 text-[10px] text-gray-500 ml-1">
                                 <span><i data-lucide="clock" class="w-3 h-3 inline"></i> ${ev.duration}m</span>
-                                ${ev.locations && ev.locations.length > 0 ? `<span class="text-emerald-400"><i data-lucide="map-pin" class="w-3 h-3 inline"></i> ${ev.locations.join(', ')}</span>` : ''}
-                                ${ev.note && ev.note.trim() !== '' ? `<span onclick="App.openNote('task', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'}); event.stopPropagation();" class="text-amber-400 hover:text-amber-300 transition-colors cursor-pointer" title="Voir la note"><i data-lucide="file-text" class="w-3 h-3 inline"></i></span>` : ''}
+                                ${ev.note && ev.note.trim() !== '' ? `<span onclick="App.openTaskNoteView('${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'}); event.stopPropagation();" class="text-amber-400 cursor-pointer bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 hover:bg-amber-500/20"><i data-lucide="file-text" class="w-3 h-3 inline"></i></span>` : ''}
                             </div>
-                            ${ev.isSubtask && ev.parentName ? `<div class="text-[9px] text-indigo-400/70 font-semibold mt-1 ml-1"><i data-lucide="corner-down-right" class="w-3 h-3 inline"></i> ${ev.parentName}</div>` : ''}
                         </div>
                     </div>`;
+
                 } else {
+                    
+                    let labelsHtml = '';
+                    let startHour = Math.floor(startMin / 60);
+                    let endHour = Math.ceil(endMin / 60);
+                    
+                    for (let h = startHour; h <= endHour; h++) {
+                        let posPercent = (((h * 60) - startMin) / duration) * 100;
+                        if (posPercent < 0) posPercent = 0;
+                        if (posPercent > 100) posPercent = 100;
+                        labelsHtml += `<span class="absolute -left-[55px] w-12 text-[10px] font-bold text-indigo-400 text-right bg-[#0D0F12] py-0.5" style="top: ${posPercent}%; margin-top: -8px; z-index: 5;">${String(h).padStart(2,'0')}h00</span>`;
+                    }
+                    
+                    let blockHeight = Math.max(80, duration * 2);
+
                     timelineHtml += `
-                    <div class="relative pl-6 pb-2">
-                        <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full bg-indigo-500 border border-[#0D0F12] animate-pulse"></div>
+                    <div class="relative pl-8 pb-2 transition-colors border border-transparent rounded-2xl flex flex-col" style="min-height: ${blockHeight}px;" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'slot', '${ev.id}')">
+                        
+                        ${labelsHtml}
+                        
+                        <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full bg-indigo-500 border border-[#0D0F12] animate-pulse z-10"></div>
                         ${inlineRedLine}
-                        <div class="bg-indigo-500/10 p-3 rounded-2xl border border-indigo-500/30">
-                            <div class="flex justify-between items-start mb-2">
-                                <span class="text-xs font-black text-indigo-400">${ev.start} - ${ev.end}</span>
-                                <button onclick="App.removeAvailability('${ev.id}')" class="text-gray-500 hover:text-red-400"><i data-lucide="x" class="w-4 h-4"></i></button>
-                            </div>
-                            <div class="flex justify-between items-center">
-                                <div class="text-[10px] text-indigo-300/70 font-semibold">
-                                    Créneau libre (${ev.duration}m)
-                                    ${ev.locations && ev.locations.length > 0 ? `<br><i data-lucide="map-pin" class="w-3 h-3 inline"></i> ${ev.locations.join(', ')}` : ''}
+                        
+                        <div class="bg-indigo-500/10 flex-1 p-3 rounded-2xl border border-indigo-500/30 flex flex-col justify-between">
+                            <div>
+                                <div class="flex justify-between items-start mb-2">
+                                    <span class="text-xs font-black text-indigo-400">${ev.start} - ${ev.end}</span>
+                                    <button onclick="App.removeAvailability('${ev.id}')" class="text-gray-500 hover:text-red-400"><i data-lucide="x" class="w-4 h-4"></i></button>
                                 </div>
-                                <button onclick="App.fillAvailability('${ev.id}')" class="bg-indigo-500 text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase shadow-[0_0_10px_rgba(99,102,241,0.4)] hover:bg-indigo-400 transition-colors">Auto-Remplir</button>
+                                <div class="text-[10px] text-indigo-300/70 font-semibold mb-2">Créneau libre (${ev.duration}m)</div>
                             </div>
+                            <div class="flex justify-end mt-auto"><button onclick="App.fillAvailability('${ev.id}')" class="bg-indigo-500 text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase shadow-[0_0_10px_rgba(99,102,241,0.4)] hover:bg-indigo-400 transition-colors">Auto-Remplir</button></div>
                         </div>
                     </div>`;
                 }
-            });
+            }); // FIN DE LA BOUCLE FOREACH (celle qui avait été coupée par accident)
             
             if (isToday && !timeLineDrawn && dayEvents.length > 0) {
                 timelineHtml += getStandaloneRedLine();
@@ -764,8 +869,12 @@ const App = {
         return `
         <div class="space-y-4">
             <div class="px-1 flex justify-between items-center">
-                <h2 class="text-xl font-black text-white flex items-center gap-2"><i data-lucide="calendar-days" class="text-cyan-400"></i> Calendrier</h2>
-                <button onclick="App.openAvailabilityModal()" class="px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-xs font-bold">+ Créneau</button>
+                <h2 class="text-xl font-black text-white flex items-center gap-2">
+                    <i data-lucide="calendar-days" class="text-cyan-400"></i> Calendrier
+                    <button onclick="App.toggleCalendarView()" class="ml-1 text-gray-400 hover:text-cyan-400 bg-[#1A1D24] p-1.5 rounded-xl border border-gray-800 transition-colors shadow-sm"><i data-lucide="${AppState.isCalendarExpanded ? 'chevron-up' : 'chevron-down'}" class="w-4 h-4"></i></button>
+                    <button onclick="App.goToToday()" class="ml-1 text-[9px] font-bold uppercase tracking-wider text-gray-400 hover:text-cyan-400 bg-[#1A1D24] px-2 py-1.5 rounded-xl border border-gray-800 transition-colors shadow-sm ${AppState.selectedDate === getTodayString() ? 'opacity-50 cursor-default pointer-events-none' : ''}">Aujourd'hui</button>
+                </h2>
+                <button onclick="App.openAvailabilityModal()" class="px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-xs font-bold shrink-0">+ Créneau</button>
             </div>
             ${datesHtml}
             <div class="bg-[#1A1D24] p-4 rounded-3xl border border-gray-800 shadow-xl min-h-[50vh]">
