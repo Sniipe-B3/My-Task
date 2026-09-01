@@ -2,7 +2,7 @@
 // 0. CONNEXION AU CLOUD FIREBASE & AUTHENTIFICATION
 // ==========================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
 import { RELEASE_HISTORY } from "./history.js";
@@ -18,6 +18,12 @@ const firebaseConfig = {
 
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
+
+// Activation de la mémoire de secours (Hors-ligne)
+enableIndexedDbPersistence(db).catch((err) => {
+    console.log("Erreur de persistance hors-ligne : ", err.code);
+});
+
 const auth = getAuth(firebaseApp);
 
 // ==========================================
