@@ -829,7 +829,17 @@ const App = {
                 // 4. AFFICHAGE TÂCHES ET CRÉNEAUX
                 if (ev.type === 'task') {
                     const isDone = ev.status === 'done';
-                    const timeDisp = ev.scheduledTime || '--:--';
+                    const startTimeDisp = ev.scheduledTime || '--:--';
+                    
+                    // Calcul de l'heure de fin au format HH:MM
+                    let endTimeDisp = '--:--';
+                    if (ev.scheduledTime) {
+                        const [startH, startM] = ev.scheduledTime.split(':').map(Number);
+                        let totalMins = startH * 60 + startM + (ev.duration || 15);
+                        let endH = Math.floor(totalMins / 60) % 24;
+                        let endM = totalMins % 60;
+                        endTimeDisp = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+                    }
                     
                     timelineHtml += `
                     <div class="relative pl-8 pb-3 transition-colors border border-transparent flex flex-col" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'task', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
@@ -840,7 +850,7 @@ const App = {
                             <div class="flex justify-between items-start mb-1">
                                 <div class="flex items-center gap-2">
                                     <button onclick="event.stopPropagation(); ${ev.isSubtask ? `App.toggleSubtask('${ev.parentId}','${ev.id}')` : `App.toggleTask('${ev.id}')`}" class="p-1 -ml-1 text-gray-500 hover:text-emerald-400 focus:outline-none"><i data-lucide="${isDone ? 'check-circle-2' : 'circle'}" class="w-4 h-4 ${isDone ? 'text-emerald-500' : ''}"></i></button>
-                                    <span class="text-xs font-black text-cyan-400 ${isDone ? 'text-gray-500 line-through' : ''}">${timeDisp}</span>
+                                    <span class="text-xs font-black text-cyan-400 ${isDone ? 'text-gray-500 line-through' : ''}">${startTimeDisp} - ${endTimeDisp}</span>
                                 </div>
                                 <span class="px-1.5 py-0.5 rounded text-[8px] border bg-[#0D0F12] ${priorityColors[ev.priority || 'Moyenne']}">${ev.priority || 'Moyenne'}</span>
                             </div>
