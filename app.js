@@ -725,89 +725,80 @@ const App = {
             return timeA.localeCompare(timeB);
         });
 
-        // === DESCRIPTIF : GÉOMÉTRIE DE LA TIMELINE ===
-        // ml-16 crée un grand espace à gauche de la ligne. border-l dessine la ligne.
+        // === DESCRIPTIF : TIMELINE RELATIVE AVEC GESTION DES SAUTS DE TEMPS ("...") ===
         let timelineHtml = `<div class="relative space-y-3 mt-2 border-l border-gray-800 ml-16">`;
 
         const now = new Date();
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
         const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
         const isToday = AppState.selectedDate === getTodayString();
-        let timeLineDrawn = false; 
-
-        // === DESCRIPTIF : HEURE ROUGE INDÉPENDANTE ===
-        // On supprime la grande ligne (h-px), et on place le texte complètement à gauche (-left-[55px])
-        const getStandaloneRedLine = () => `
-            <div class="relative h-px mb-4 z-20">
-                <span class="absolute -left-[55px] w-12 text-[10px] font-black text-red-500 text-right -top-2 bg-[#1A1D24] px-1 rounded z-30">${timeStr}</span>
-                <div class="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="top: -4px;"></div>
-            </div>`;
+        
+        let timeLineDrawn = false;
+        let lastEndMin = null;
 
         if (dayEvents.length === 0) {
-            if (isToday) timelineHtml += getStandaloneRedLine();
+            // S'il n'y a rien, on affiche juste l'heure si c'est aujourd'hui
+            if (isToday) {
+                timelineHtml += `
+                <div class="relative h-px mb-4 z-20">
+                    <span class="absolute -left-[55px] w-12 text-[10px] font-black text-red-500 text-right -top-2 bg-[#1A1D24] px-1 rounded z-30">${timeStr}</span>
+                    <div class="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="top: -4px;"></div>
+                </div>`;
+            }
             timelineHtml += `<div class="py-10 text-center text-gray-500 text-sm font-semibold">Rien de prévu à cette date.</div>`;
         } else {
             dayEvents.forEach(ev => {
-                let startH, startM, duration;
+                let startMin, endMin, duration;
+                
+                // 1. Calcul du temps de l'événement
                 if (ev.type === 'task') {
-                    [startH, startM] = (ev.scheduledTime || '23:59').split(':').map(Number);
+                    const [h, m] = (ev.scheduledTime || '23:59').split(':').map(Number);
+                    startMin = h * 60 + m;
                     duration = ev.duration || 15;
-                } else {
-                    [startH, startM] = ev.start.split(':').map(Number);
+                    endMin = startMin + duration;
+                } else if (ev.type === 'slot') {
+                    const [h, m] = ev.start.split(':').map(Number);
+                    startMin = h * 60 + m;
                     duration = ev.duration;
+                    endMin = startMin + duration;
                 }
-                const startMin = startH * 60 + startM;
-                const endMin = startMin + duration;
 
-                if (isToday && !timeLineDrawn && currentMinutes < startMin) {
-                    timelineHtml += getStandaloneRedLine();
+                // 2. Si c'est l'heure actuelle et qu'elle se trouve AVANT toutes les tâches
+                if (isToday && !timeLineDrawn && currentMinutes < startMin && (lastEndMin === null || currentMinutes >= lastEndMin)) {
+                    timelineHtml += `
+                    <div class="relative h-px mb-4 mt-2 z-20">
+                        <span class="absolute -left-[55px] w-12 text-[10px] font-black text-red-500 text-right -top-2 px-1 rounded z-30">${timeStr}</span>
+                        <div class="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="top: -4px;"></div>
+                    </div>`;
                     timeLineDrawn = true;
                 }
 
+                // 3. LIGNE ROUGE TRAVERSANT UNE TÂCHE EN COURS
                 let inlineRedLine = '';
                 if (isToday && !timeLineDrawn && currentMinutes >= startMin && currentMinutes < endMin) {
                     let progress = (currentMinutes - startMin) / duration;
-                    progress = Math.max(0.10, Math.min(0.90, progress)); 
+                    progress = Math.max(0.05, Math.min(0.95, progress)); 
                     
-                    // === DESCRIPTIF : HEURE ROUGE SUR UNE TÂCHE ===
-                    // Plus de ligne qui traverse l'écran, juste l'heure à gauche et le point sur la barre
+                    // Ajout de "left-0" au parent pour ignorer le padding et aligner le point rouge avec le point cyan. Suppression du fond sombre du texte.
                     inlineRedLine = `
-                    <div class="absolute w-full z-20 pointer-events-none" style="top: ${progress * 100}%;">
-                        <span class="absolute -left-[55px] w-12 text-[10px] font-black text-red-500 text-right bg-[#1A1D24] px-1 rounded z-30" style="margin-top: -8px;">${timeStr}</span>
+                    <div class="absolute left-0 w-full z-20 pointer-events-none" style="top: ${progress * 100}%;">
+                        <span class="absolute -left-[55px] w-12 text-[10px] font-black text-red-500 text-right px-1 rounded z-30" style="margin-top: -8px;">${timeStr}</span>
                         <div class="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="margin-top: -5px;"></div>
                     </div>`;
                     timeLineDrawn = true;
                 }
 
+                // 4. AFFICHAGE TÂCHES ET CRÉNEAUX
                 if (ev.type === 'task') {
                     const isDone = ev.status === 'done';
                     const timeDisp = ev.scheduledTime || '--:--';
                     
-                    let labelsHtml = '';
-                    let startHour = Math.floor(startMin / 60);
-                    let endHour = Math.ceil(endMin / 60);
-                    
-                    for (let h = startHour; h <= endHour; h++) {
-                        let posPercent = (((h * 60) - startMin) / duration) * 100;
-                        if (posPercent < 0) posPercent = 0;
-                        if (posPercent > 100) posPercent = 100;
-                        
-                        // Heures à gauche de la ligne (-left-[55px])
-                        labelsHtml += `<span class="absolute -left-[55px] w-12 text-[10px] font-bold text-gray-500 text-right bg-[#0D0F12] py-0.5" style="top: ${posPercent}%; margin-top: -8px; z-index: 5;">${String(h).padStart(2,'0')}h00</span>`;
-                    }
-                    
-                    let blockHeight = Math.max(80, duration * 2);
-
-                    // La tâche a un pl-8 pour se décoller de la ligne
                     timelineHtml += `
-                    <div class="relative pl-8 pb-2 transition-colors border border-transparent rounded-2xl flex flex-col" style="min-height: ${blockHeight}px;" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'task', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
-                        
-                        ${labelsHtml}
-                        
+                    <div class="relative pl-8 pb-3 transition-colors border border-transparent flex flex-col" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'task', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
                         <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-cyan-500 border border-[#0D0F12]'} z-10"></div>
                         ${inlineRedLine}
                         
-                        <div class="bg-[#1A1D24] flex-1 p-3 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} cursor-pointer hover:border-gray-700 transition-colors" onclick="App.openMenu(event, '${ev.isSubtask ? 'subtask' : 'task'}', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
+                        <div class="bg-[#1A1D24] p-3 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} cursor-pointer hover:border-gray-700 transition-colors flex flex-col" onclick="App.openMenu(event, '${ev.isSubtask ? 'subtask' : 'task'}', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
                             <div class="flex justify-between items-start mb-1">
                                 <div class="flex items-center gap-2">
                                     <button onclick="event.stopPropagation(); ${ev.isSubtask ? `App.toggleSubtask('${ev.parentId}','${ev.id}')` : `App.toggleTask('${ev.id}')`}" class="p-1 -ml-1 text-gray-500 hover:text-emerald-400 focus:outline-none"><i data-lucide="${isDone ? 'check-circle-2' : 'circle'}" class="w-4 h-4 ${isDone ? 'text-emerald-500' : ''}"></i></button>
@@ -818,50 +809,42 @@ const App = {
                             <h4 class="text-sm font-bold text-white ${isDone ? 'line-through text-gray-500' : ''} ml-1">${ev.name}</h4>
                             <div class="flex items-center gap-2 mt-1.5 text-[10px] text-gray-500 ml-1">
                                 <span><i data-lucide="clock" class="w-3 h-3 inline"></i> ${ev.duration}m</span>
-                                ${ev.note && ev.note.trim() !== '' ? `<span onclick="App.openTaskNoteView('${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'}); event.stopPropagation();" class="text-amber-400 cursor-pointer bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 hover:bg-amber-500/20"><i data-lucide="file-text" class="w-3 h-3 inline"></i></span>` : ''}
+                                ${ev.locations && ev.locations.length > 0 ? `<span class="text-emerald-400"><i data-lucide="map-pin" class="w-3 h-3 inline"></i> ${ev.locations.join(', ')}</span>` : ''}
+                                ${ev.note && ev.note.trim() !== '' ? `<span onclick="App.openNote('task', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'}); event.stopPropagation();" class="text-amber-400 cursor-pointer bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 hover:bg-amber-500/20"><i data-lucide="file-text" class="w-3 h-3 inline"></i></span>` : ''}
                             </div>
+                            ${ev.isSubtask && ev.parentName ? `<div class="text-[9px] text-indigo-400/70 font-semibold mt-1 ml-1"><i data-lucide="corner-down-right" class="w-3 h-3 inline"></i> ${ev.parentName}</div>` : ''}
                         </div>
                     </div>`;
-
-                } else {
-                    
-                    let labelsHtml = '';
-                    let startHour = Math.floor(startMin / 60);
-                    let endHour = Math.ceil(endMin / 60);
-                    
-                    for (let h = startHour; h <= endHour; h++) {
-                        let posPercent = (((h * 60) - startMin) / duration) * 100;
-                        if (posPercent < 0) posPercent = 0;
-                        if (posPercent > 100) posPercent = 100;
-                        labelsHtml += `<span class="absolute -left-[55px] w-12 text-[10px] font-bold text-indigo-400 text-right bg-[#0D0F12] py-0.5" style="top: ${posPercent}%; margin-top: -8px; z-index: 5;">${String(h).padStart(2,'0')}h00</span>`;
-                    }
-                    
-                    let blockHeight = Math.max(80, duration * 2);
-
+                } else if (ev.type === 'slot') {
                     timelineHtml += `
-                    <div class="relative pl-8 pb-2 transition-colors border border-transparent rounded-2xl flex flex-col" style="min-height: ${blockHeight}px;" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'slot', '${ev.id}')">
-                        
-                        ${labelsHtml}
-                        
+                    <div class="relative pl-8 pb-3 transition-colors border border-transparent flex flex-col" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'slot', '${ev.id}')">
                         <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full bg-indigo-500 border border-[#0D0F12] animate-pulse z-10"></div>
                         ${inlineRedLine}
                         
-                        <div class="bg-indigo-500/10 flex-1 p-3 rounded-2xl border border-indigo-500/30 flex flex-col justify-between">
+                        <div class="bg-indigo-500/10 p-3 rounded-2xl border border-indigo-500/30 flex flex-col justify-between">
                             <div>
                                 <div class="flex justify-between items-start mb-2">
                                     <span class="text-xs font-black text-indigo-400">${ev.start} - ${ev.end}</span>
                                     <button onclick="App.removeAvailability('${ev.id}')" class="text-gray-500 hover:text-red-400"><i data-lucide="x" class="w-4 h-4"></i></button>
                                 </div>
                                 <div class="text-[10px] text-indigo-300/70 font-semibold mb-2">Créneau libre (${ev.duration}m)</div>
+                                ${ev.locations && ev.locations.length > 0 ? `<div class="text-[10px] text-emerald-400 font-semibold mt-1"><i data-lucide="map-pin" class="w-3 h-3 inline"></i> ${ev.locations.join(', ')}</div>` : ''}
                             </div>
-                            <div class="flex justify-end mt-auto"><button onclick="App.fillAvailability('${ev.id}')" class="bg-indigo-500 text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase shadow-[0_0_10px_rgba(99,102,241,0.4)] hover:bg-indigo-400 transition-colors">Auto-Remplir</button></div>
+                            <div class="flex justify-end mt-auto pt-2"><button onclick="App.fillAvailability('${ev.id}')" class="bg-indigo-500 text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase shadow-[0_0_10px_rgba(99,102,241,0.4)] hover:bg-indigo-400 transition-colors">Auto-Remplir</button></div>
                         </div>
                     </div>`;
                 }
-            }); // FIN DE LA BOUCLE FOREACH (celle qui avait été coupée par accident)
-            
-            if (isToday && !timeLineDrawn && dayEvents.length > 0) {
-                timelineHtml += getStandaloneRedLine();
+
+                lastEndMin = endMin;
+            });
+
+            // 8. Ligne rouge si l'heure actuelle est APRÈS toutes les tâches
+            if (isToday && !timeLineDrawn && currentMinutes > lastEndMin) {
+                timelineHtml += `
+                <div class="relative h-px mb-4 mt-2 z-20">
+                    <span class="absolute -left-[55px] w-12 text-[10px] font-black text-red-500 text-right -top-2 px-1 rounded z-30">${timeStr}</span>
+                    <div class="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="top: -4px;"></div>
+                </div>`;
             }
         }
         timelineHtml += `</div>`;
@@ -870,7 +853,7 @@ const App = {
         <div class="space-y-4">
             <div class="px-1 flex justify-between items-center">
                 <h2 class="text-xl font-black text-white flex items-center gap-2">
-                    <i data-lucide="calendar-days" class="text-cyan-400"></i> Calendrier
+                    <i data-lucide="calendar-days" class="text-cyan-400"></i>
                     <button onclick="App.toggleCalendarView()" class="ml-1 text-gray-400 hover:text-cyan-400 bg-[#1A1D24] p-1.5 rounded-xl border border-gray-800 transition-colors shadow-sm"><i data-lucide="${AppState.isCalendarExpanded ? 'chevron-up' : 'chevron-down'}" class="w-4 h-4"></i></button>
                     <button onclick="App.goToToday()" class="ml-1 text-[9px] font-bold uppercase tracking-wider text-gray-400 hover:text-cyan-400 bg-[#1A1D24] px-2 py-1.5 rounded-xl border border-gray-800 transition-colors shadow-sm ${AppState.selectedDate === getTodayString() ? 'opacity-50 cursor-default pointer-events-none' : ''}">Aujourd'hui</button>
                 </h2>
@@ -881,8 +864,7 @@ const App = {
                 <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 border-b border-gray-800 pb-2">Timeline</h3>
                 ${timelineHtml}
             </div>
-        </div>
-        `;
+        </div>`;
     },
 
     renderProjectItem(project) {
@@ -1103,6 +1085,20 @@ const App = {
                 </div>
             `;
         } else if (AppState.availabilityModal) {
+            const now = new Date();
+            let hours = now.getHours();
+            let minutes = now.getMinutes();
+
+            if (minutes > 30) {
+                hours = (hours + 1) % 24;
+                minutes = 0;
+            } else if (minutes > 0) {
+                minutes = 30;
+            }
+
+            const defaultStart = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+            const defaultEnd = `${String((hours + 2) % 24).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+
             modalContainer.innerHTML = `
                 <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center pb-8 px-4" onclick="App.closeAvailabilityModal()">
                     <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
@@ -1111,9 +1107,9 @@ const App = {
                         <form onsubmit="App.addAvailability(event)" class="space-y-4">
                             <div class="flex gap-2 items-center">
                                 <span class="text-xs text-gray-500 font-bold w-6">De</span>
-                                <input type="time" id="plan-start" required class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-white border border-gray-800" value="14:00">
+                                <input type="time" id="plan-start" required class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-white border border-gray-800" value="${defaultStart}">
                                 <span class="text-xs text-gray-500 font-bold w-6 text-center">À</span>
-                                <input type="time" id="plan-end" required class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-white border border-gray-800" value="16:00">
+                                <input type="time" id="plan-end" required class="flex-1 bg-[#0D0F12] rounded-xl px-3 py-3 text-sm text-white border border-gray-800" value="${defaultEnd}">
                             </div>
                             <div>
                                 <label class="text-[10px] text-gray-500 uppercase font-bold block mb-2">Filtres de ce créneau (Optionnel)</label>
