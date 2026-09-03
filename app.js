@@ -86,58 +86,96 @@ const App = {
     
     // --- GESTION DU TEMPS & RETOUR EN BASE ---
     checkMissedTasks() {
-        const now = new Date();
-        const todayStr = getTodayString();
-        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        const now = new Date().getTime(); // On utilise le timestamp exact pour calculer les 24h
 
         let missed = [];
         let hasChanges = false;
 
-        AppState.tasks = AppState.tasks.map(t => {
-            if (t.status !== 'done' && t.scheduledDate) {
-                const [tH, tM] = t.scheduledTime ? t.scheduledTime.split(':').map(Number) : [23, 59];
-                const isPastDate = t.scheduledDate < todayStr;
-                const isPastTime = t.scheduledDate === todayStr && (tH * 60 + tM) < currentMinutes;
+        // Fonction utilitaire pour savoir si une tâche est en retard de plus de 24h APRES la fin de sa durée prévue
+        const isTaskExpired = (dateStr, timeStr, duration) => {
+            if (!dateStr) return false;
+            const [y, m, d] = dateStr.split('-').map(Number);
+            const [h, min] = timeStr ? timeStr.split(':').map(Number) : [23, 59];
+            const taskDuration = duration || 15;
+            
+            // On recrée la date exacte de fin prévue
+            const endDate = new Date(y, m - 1, d, h, min + taskDuration);
+            // On ajoute 24 heures (24 * 60 * 60 * 1000 millisecondes)
+            const expiryDate = endDate.getTime() + (24 * 60 * 60 * 1000);
+            
+            return now > expiryDate;
+        };
 
-                if (isPastDate || isPastTime) {
-                    missed.push(t);
-                    hasChanges = true;
-                    return { ...t, scheduledDate: null, scheduledTime: null };
-                }
+        AppState.tasks = AppState.tasks.map(t => {
+            if (t.status !== 'done' && isTaskExpired(t.scheduledDate, t.scheduledTime, t.duration)) {
+                missed.push(t);
+                // On ne modifie plus la tâche silencieusement ici, on attend le choix de l'utilisateur !
             }
             
             if (t.subtasks && t.subtasks.length > 0) {
-                let subChanged = false;
-                const newSubs = t.subtasks.map(s => {
-                    if (s.status !== 'done' && s.scheduledDate) {
-                        const [sH, sM] = s.scheduledTime ? s.scheduledTime.split(':').map(Number) : [23, 59];
-                        if (s.scheduledDate < todayStr || (s.scheduledDate === todayStr && (sH * 60 + sM) < currentMinutes)) {
-                            missed.push({...s, parentName: t.name});
-                            subChanged = true;
-                            return { ...s, scheduledDate: null, scheduledTime: null };
-                        }
+                t.subtasks.forEach(s => {
+                    if (s.status !== 'done' && isTaskExpired(s.scheduledDate, s.scheduledTime, s.duration)) {
+                        missed.push({...s, parentName: t.name, parentId: t.id});
                     }
-                    return s;
                 });
-                if (subChanged) {
-                    hasChanges = true;
-                    return { ...t, subtasks: newSubs };
-                }
             }
             return t;
         });
 
+        // Nettoyage des créneaux (eux, on peut les nettoyer dès qu'ils sont périmés)
+        const todayStr = getTodayString();
+        const currentMinutes = new Date().getHours() * 60 + new Date().getMinutes();
         const oldAvailLength = AppState.availabilities.length;
+        
         AppState.availabilities = AppState.availabilities.filter(a => {
             const [aH, aM] = a.end ? a.end.split(':').map(Number) : [23, 59];
             const isPastDate = a.date < todayStr;
             const isPastTime = a.date === todayStr && (aH * 60 + aM) < currentMinutes;
             return !(isPastDate || isPastTime);
         });
+        
         if (oldAvailLength !== AppState.availabilities.length) hasChanges = true;
 
         if (missed.length > 0) { AppState.missedTasksNotif = missed; }
         if (hasChanges && AppState.currentUser) { this.saveToCloud(); }
+    },
+
+    // Nouvelle fonction pour traiter le choix de l'utilisateur
+    processMissedTasks(action) {
+        let hasChanges = false;
+        
+        if (action === 'replanify') {
+            // L'utilisateur veut les renvoyer dans la base (On efface les dates)
+            AppState.tasks = AppState.tasks.map(t => {
+                let modified = false;
+                let newT = { ...t };
+                
+                // Si la tâche principale est dans la liste des retards
+                if (AppState.missedTasksNotif.some(m => m.id === t.id && !m.parentId)) {
+                    newT.scheduledDate = null;
+                    newT.scheduledTime = null;
+                    modified = true;
+                }
+                
+                // Si des sous-tâches sont dans la liste des retards
+                if (t.subtasks && t.subtasks.length > 0) {
+                    newT.subtasks = t.subtasks.map(s => {
+                        if (AppState.missedTasksNotif.some(m => m.id === s.id && m.parentId === t.id)) {
+                            modified = true;
+                            return { ...s, scheduledDate: null, scheduledTime: null };
+                        }
+                        return s;
+                    });
+                }
+                
+                if (modified) hasChanges = true;
+                return newT;
+            });
+        }
+        // Si action === 'ignore', on ne fait rien, elles restent dans le calendrier avec leur date passée.
+        
+        AppState.missedTasksNotif = []; 
+        if (hasChanges) { this.save(); } else { this.render(); }
     },
 
     closeMissedTasksNotif() { AppState.missedTasksNotif = []; this.render(); },
@@ -1042,19 +1080,26 @@ const App = {
         // MODALS
         if (AppState.missedTasksNotif.length > 0) {
             modalContainer.innerHTML = `
-                <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4" onclick="App.closeMissedTasksNotif()">
+                <div class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center px-4" onclick="App.processMissedTasks('ignore')">
                     <div class="bg-[#1A1D24] border border-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl transform transition-all animate-slide-up" onclick="event.stopPropagation()">
                         <div class="flex justify-center mb-4">
-                            <div class="p-3 bg-amber-500/20 rounded-full border border-amber-500/30">
-                                <i data-lucide="rotate-ccw" class="w-8 h-8 text-amber-400"></i>
+                            <div class="p-3 bg-red-500/20 rounded-full border border-red-500/30">
+                                <i data-lucide="alert-triangle" class="w-8 h-8 text-red-400"></i>
                             </div>
                         </div>
-                        <h3 class="text-xl font-black text-white text-center mb-2">Tâches en retard</h3>
-                        <p class="text-sm text-gray-400 text-center mb-6">Les tâches suivantes n'ont pas été cochées à temps. Elles ont été replacées dans la Base pour ne pas polluer l'agenda.</p>
-                        <div class="space-y-2 max-h-[40vh] overflow-y-auto mb-6">
-                            ${AppState.missedTasksNotif.map(t => `<div class="bg-[#0D0F12] p-3 rounded-xl border border-gray-800 text-sm font-bold text-gray-300 flex justify-between items-center"><span>${t.name}</span> <span class="text-[10px] text-gray-500 px-2 py-0.5 rounded bg-gray-800">${t.parentName || 'Tâche'}</span></div>`).join('')}
+                        <h3 class="text-xl font-black text-white text-center mb-2">Retard détecté (> 24h)</h3>
+                        <p class="text-sm text-gray-400 text-center mb-6">Ces tâches devaient être terminées hier. Que souhaitez-vous faire ?</p>
+                        <div class="space-y-2 max-h-[30vh] overflow-y-auto mb-6 pr-2">
+                            ${AppState.missedTasksNotif.map(t => `<div class="bg-[#0D0F12] p-3 rounded-xl border border-gray-800 text-sm font-bold text-gray-300 flex flex-col gap-1"><span>${t.name}</span><span class="text-[10px] text-gray-500 flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> Prévu le ${t.scheduledDate}</span></div>`).join('')}
                         </div>
-                        <button onclick="App.closeMissedTasksNotif()" class="w-full py-4 rounded-xl bg-amber-500 text-black font-bold uppercase tracking-wider hover:bg-amber-400 transition-colors shadow-[0_0_15px_rgba(245,158,11,0.3)]">J'ai compris</button>
+                        <div class="flex flex-col gap-3">
+                            <button onclick="App.processMissedTasks('replanify')" class="w-full py-4 rounded-xl bg-amber-500 text-black font-bold uppercase tracking-wider hover:bg-amber-400 transition-colors shadow-[0_0_15px_rgba(245,158,11,0.3)] flex items-center justify-center gap-2">
+                                <i data-lucide="inbox" class="w-5 h-5"></i> Renvoyer dans la Base
+                            </button>
+                            <button onclick="App.processMissedTasks('ignore')" class="w-full py-3 rounded-xl bg-[#0D0F12] text-gray-400 font-bold border border-gray-800 hover:text-white transition-colors">
+                                Laisser dans l'agenda
+                            </button>
+                        </div>
                     </div>
                 </div>
             `;
