@@ -484,102 +484,6 @@ const App = {
         return allActive;
     },
 
-    // --- DRAG & DROP (GLISSER-DÉPOSER) CALENDRIER ---
-    handleCalDragStart(event, type, id, parentId = null) {
-        // On mémorise ce qu'on est en train de glisser
-        event.dataTransfer.setData('text/plain', JSON.stringify({ type, id, parentId }));
-        // On donne un effet visuel (optionnel)
-        event.target.style.opacity = '0.5';
-    },
-
-    handleCalDragEnd(event) {
-        event.target.style.opacity = '1';
-    },
-
-    handleCalDragOver(event) {
-        event.preventDefault(); // Nécessaire pour autoriser le "drop"
-        event.currentTarget.classList.add('border-cyan-500/50'); // Effet visuel au survol
-        event.currentTarget.classList.add('bg-[#1f232b]');
-    },
-
-    handleCalDragLeave(event) {
-        event.currentTarget.classList.remove('border-cyan-500/50');
-        event.currentTarget.classList.remove('bg-[#1f232b]');
-    },
-
-    handleCalDrop(event, targetType, targetId, targetParentId = null) {
-        event.preventDefault();
-        event.currentTarget.classList.remove('border-cyan-500/50');
-        event.currentTarget.classList.remove('bg-[#1f232b]');
-
-        // 1. Récupérer les infos de l'élément glissé
-        let dragData;
-        try { dragData = JSON.parse(event.dataTransfer.getData('text/plain')); } 
-        catch (e) { return; }
-        
-        if (!dragData || dragData.type !== 'task') return; // Pour l'instant, on ne déplace que les tâches
-
-        // 2. Trouver la tâche que l'on glisse dans la base de données
-        let draggedTask;
-        if (dragData.parentId && dragData.parentId !== 'null') {
-            const parent = AppState.tasks.find(t => t.id === dragData.parentId);
-            if (parent) draggedTask = parent.subtasks.find(s => s.id === dragData.id);
-        } else {
-            draggedTask = AppState.tasks.find(t => t.id === dragData.id);
-        }
-
-        if (!draggedTask) return;
-
-        // 3. Calculer la nouvelle heure !
-        // event.offsetY donne la position de la souris relative au bloc survolé
-        const dropY = event.offsetY; 
-        
-        // On a besoin de savoir sur quel élément on a relâché (target)
-        let targetEvent;
-        // On cherche le targetEvent (tâche ou créneau) dans la liste du jour pour connaître son heure de départ
-        // (C'est un peu complexe sans refaire un `dayEvents`, on va simplifier :)
-        
-        // Méthode simple : Si on relâche la tâche SUR une autre tâche, 
-        // on prend l'heure de cette tâche ciblée, et on ajoute/soustrait des minutes en fonction d'où on a lâché.
-        
-        // Pour faire simple dans un premier temps : on va juste échanger les heures !
-        // C'est beaucoup plus robuste que de calculer des pixels sur des div qui changent de taille.
-        
-        let targetObj;
-        let newTimeStr;
-        let newDateStr = AppState.selectedDate; // On reste sur le même jour
-
-        if (targetType === 'task') {
-            if (targetParentId && targetParentId !== 'null') {
-                const parent = AppState.tasks.find(t => t.id === targetParentId);
-                if (parent) targetObj = parent.subtasks.find(s => s.id === targetId);
-            } else {
-                targetObj = AppState.tasks.find(t => t.id === targetId);
-            }
-            if (targetObj) newTimeStr = targetObj.scheduledTime;
-        } else if (targetType === 'slot') {
-            targetObj = AppState.availabilities.find(a => a.id === targetId);
-            if (targetObj) newTimeStr = targetObj.start;
-        }
-
-        if (!newTimeStr) return; // Si on n'a pas trouvé de cible valide
-
-        // 4. Mettre à jour l'heure de la tâche glissée dans AppState
-        if (dragData.parentId && dragData.parentId !== 'null') {
-            AppState.tasks = AppState.tasks.map(t => {
-                if (t.id === dragData.parentId) {
-                    return { ...t, subtasks: t.subtasks.map(s => s.id === dragData.id ? { ...s, scheduledTime: newTimeStr } : s) };
-                }
-                return t;
-            });
-        } else {
-            AppState.tasks = AppState.tasks.map(t => t.id === dragData.id ? { ...t, scheduledTime: newTimeStr } : t);
-        }
-
-        // 5. Sauvegarder et rafraîchir !
-        this.save();
-    },
-
     // --- LE CALENDRIER ---
     toggleCalendarView() { 
         AppState.isCalendarExpanded = !AppState.isCalendarExpanded; 
@@ -938,7 +842,7 @@ const App = {
                     }
                     
                     timelineHtml += `
-                    <div class="relative pl-8 pb-3 transition-colors border border-transparent flex flex-col cursor-grab active:cursor-grabbing" draggable="true" ondragstart="App.handleCalDragStart(event, 'task', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})" ondragend="App.handleCalDragEnd(event)" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'task', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
+                    <div class="relative pl-8 pb-3 transition-colors border border-transparent flex flex-col" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'task', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
                         <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-cyan-500 border border-[#0D0F12]'} z-10"></div>
                         ${inlineRedLine}
                         
@@ -961,7 +865,7 @@ const App = {
                     </div>`;
                 } else if (ev.type === 'slot') {
                     timelineHtml += `
-                    <div class="relative pl-8 pb-3 transition-colors border border-transparent flex flex-col cursor-grab active:cursor-grabbing" draggable="true" ondragstart="App.handleCalDragStart(event, 'slot', '${ev.id}')" ondragend="App.handleCalDragEnd(event)" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'slot', '${ev.id}')">
+                    <div class="relative pl-8 pb-3 transition-colors border border-transparent flex flex-col" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'slot', '${ev.id}')">
                         <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full bg-indigo-500 border border-[#0D0F12] animate-pulse z-10"></div>
                         ${inlineRedLine}
                         
