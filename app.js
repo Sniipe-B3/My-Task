@@ -903,7 +903,7 @@ const App = {
                 <h2 class="text-xl font-black text-white flex items-center gap-2">
                     <i data-lucide="calendar-days" class="text-cyan-400"></i>
                     <button onclick="App.toggleCalendarView()" class="ml-1 text-gray-400 hover:text-cyan-400 bg-[#1A1D24] p-1.5 rounded-xl border border-gray-800 transition-colors shadow-sm"><i data-lucide="${AppState.isCalendarExpanded ? 'chevron-up' : 'chevron-down'}" class="w-4 h-4"></i></button>
-                    <button onclick="App.goToToday()" class="ml-1 text-[9px] font-bold uppercase tracking-wider text-gray-400 hover:text-cyan-400 bg-[#1A1D24] px-2 py-1.5 rounded-xl border border-gray-800 transition-colors shadow-sm ${AppState.selectedDate === getTodayString() ? 'opacity-50 cursor-default pointer-events-none' : ''}">Aujourd'hui</button>
+                    <button onclick="App.goToToday()" class="ml-1 text-[9px] font-bold uppercase tracking-wider text-gray-400 hover:text-cyan-400 bg-[#1A1D24] px-2 py-1.5 rounded-xl border border-gray-800 transition-colors shadow-sm">Aujourd'hui</button>
                 </h2>
                 <button onclick="App.openAvailabilityModal()" class="px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-xs font-bold shrink-0">+ Créneau</button>
             </div>
