@@ -82,6 +82,48 @@ const AppState = {
 // 4. MOTEUR DE L'APPLICATION
 // ==========================================
 const App = {
+    timeDragState: null,
+    
+    startTaskTimeDrag(e, type, id, parentId) {
+        e.stopPropagation();
+        
+        let targetList = type === 'slot' ? AppState.availabilities : AppState.tasks;
+        let item = null;
+        
+        if (type === 'subtask') {
+            const parent = AppState.tasks.find(t => t.id === parentId);
+            if (parent && parent.subtasks) item = parent.subtasks.find(s => s.id === id);
+        } else {
+            item = targetList.find(t => t.id === id);
+        }
+        
+        if (!item) return;
+
+        let timeStr = type === 'slot' ? item.start : (item.scheduledTime || '23:59');
+        const [h, m] = timeStr.split(':').map(Number);
+        
+        let card = e.currentTarget.closest('.draggable-card');
+        let timeDisplay = card ? card.querySelector('.task-time-display') : null;
+
+        App.timeDragState = {
+            active: true,
+            startY: e.clientY || (e.touches && e.touches[0].clientY),
+            startMinutes: h * 60 + m,
+            id: id,
+            type: type,
+            parentId: parentId,
+            card: card,
+            timeDisplay: timeDisplay,
+            duration: item.duration || 15
+        };
+
+        if (card) {
+            card.style.transform = 'scale(0.98)';
+            card.style.transition = 'none';
+            card.style.zIndex = '50';
+            card.style.position = 'relative';
+        }
+    },
     lastTapTime: 0,
     
     // --- GESTION DU TEMPS & RETOUR EN BASE ---
@@ -846,13 +888,16 @@ const App = {
                         <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-cyan-500 border border-[#0D0F12]'} z-10"></div>
                         ${inlineRedLine}
                         
-                        <div class="bg-[#1A1D24] p-3 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} cursor-pointer hover:border-gray-700 transition-colors flex flex-col" onclick="App.openMenu(event, '${ev.isSubtask ? 'subtask' : 'task'}', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
+                        <div class="draggable-card bg-[#1A1D24] p-3 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} cursor-pointer hover:border-gray-700 transition-colors flex flex-col" onclick="App.openMenu(event, '${ev.isSubtask ? 'subtask' : 'task'}', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
                             <div class="flex justify-between items-start mb-1">
                                 <div class="flex items-center gap-2">
                                     <button onclick="event.stopPropagation(); ${ev.isSubtask ? `App.toggleSubtask('${ev.parentId}','${ev.id}')` : `App.toggleTask('${ev.id}')`}" class="p-1 -ml-1 text-gray-500 hover:text-emerald-400 focus:outline-none"><i data-lucide="${isDone ? 'check-circle-2' : 'circle'}" class="w-4 h-4 ${isDone ? 'text-emerald-500' : ''}"></i></button>
-                                    <span class="text-xs font-black text-cyan-400 ${isDone ? 'text-gray-500 line-through' : ''}">${startTimeDisp} - ${endTimeDisp}</span>
+                                    <span class="task-time-display text-xs font-black text-cyan-400 ${isDone ? 'text-gray-500 line-through' : ''}">${startTimeDisp} - ${endTimeDisp}</span>
                                 </div>
-                                <span class="px-1.5 py-0.5 rounded text-[8px] border bg-[#0D0F12] ${priorityColors[ev.priority || 'Moyenne']}">${ev.priority || 'Moyenne'}</span>
+                                <div class="flex items-center gap-1">
+                                    <span class="px-1.5 py-0.5 rounded text-[8px] border bg-[#0D0F12] ${priorityColors[ev.priority || 'Moyenne']}">${ev.priority || 'Moyenne'}</span>
+                                    <div onpointerdown="App.startTaskTimeDrag(event, '${ev.isSubtask ? 'subtask' : 'task'}', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})" onclick="event.stopPropagation()" class="text-gray-600 active:text-cyan-400 p-0.5 rounded touch-none cursor-ns-resize hover:bg-gray-800"><i data-lucide="grip-vertical" class="w-4 h-4"></i></div>
+                                </div>
                             </div>
                             <h4 class="text-sm font-bold text-white ${isDone ? 'line-through text-gray-500' : ''} ml-1">${ev.name}</h4>
                             <div class="flex items-center gap-2 mt-1.5 text-[10px] text-gray-500 ml-1">
@@ -869,11 +914,14 @@ const App = {
                         <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full bg-indigo-500 border border-[#0D0F12] animate-pulse z-10"></div>
                         ${inlineRedLine}
                         
-                        <div class="bg-indigo-500/10 p-3 rounded-2xl border border-indigo-500/30 flex flex-col justify-between">
+                        <div class="draggable-card bg-indigo-500/10 p-3 rounded-2xl border border-indigo-500/30 flex flex-col justify-between">
                             <div>
                                 <div class="flex justify-between items-start mb-2">
-                                    <span class="text-xs font-black text-indigo-400">${ev.start} - ${ev.end}</span>
-                                    <button onclick="App.removeAvailability('${ev.id}')" class="text-gray-500 hover:text-red-400"><i data-lucide="x" class="w-4 h-4"></i></button>
+                                    <span class="task-time-display text-xs font-black text-indigo-400">${ev.start} - ${ev.end}</span>
+                                    <div class="flex items-center gap-2">
+                                        <div onpointerdown="App.startTaskTimeDrag(event, 'slot', '${ev.id}')" onclick="event.stopPropagation()" class="text-indigo-400/50 active:text-indigo-400 p-0.5 rounded touch-none cursor-ns-resize hover:bg-indigo-500/10"><i data-lucide="grip-vertical" class="w-4 h-4"></i></div>
+                                        <button onclick="App.removeAvailability('${ev.id}')" class="text-gray-500 hover:text-red-400"><i data-lucide="x" class="w-4 h-4"></i></button>
+                                    </div>
                                 </div>
                                 <div class="text-[10px] text-indigo-300/70 font-semibold mb-2">Créneau libre (${ev.duration}m)</div>
                                 ${ev.locations && ev.locations.length > 0 ? `<div class="text-[10px] text-emerald-400 font-semibold mt-1"><i data-lucide="map-pin" class="w-3 h-3 inline"></i> ${ev.locations.join(', ')}</div>` : ''}
@@ -1379,6 +1427,71 @@ const App = {
                     console.error("Mode hors-ligne, utilisation des données locales de secours.", e);
                 }
                 
+                document.addEventListener('pointermove', (e) => {
+                    if (App.timeDragState && App.timeDragState.active) {
+                        const currentY = e.clientY || (e.touches && e.touches[0].clientY);
+                        const deltaY = currentY - App.timeDragState.startY;
+                        
+                        let newMinutes = App.timeDragState.startMinutes + Math.floor(deltaY);
+                        newMinutes = Math.max(0, Math.min(23 * 60 + 59, newMinutes));
+                        
+                        const newH = Math.floor(newMinutes / 60);
+                        const newM = newMinutes % 60;
+                        const timeStr = `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+                        
+                        if (App.timeDragState.timeDisplay) {
+                            let endMinutes = newMinutes + App.timeDragState.duration;
+                            let endH = Math.floor(endMinutes / 60) % 24;
+                            let endM = endMinutes % 60;
+                            const endStr = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+                            App.timeDragState.timeDisplay.textContent = `${timeStr} - ${endStr}`;
+                            App.timeDragState.timeDisplay.classList.add('text-red-400');
+                        }
+                        
+                        if (App.timeDragState.card) {
+                            App.timeDragState.card.style.transform = `translateY(${deltaY}px) scale(0.98)`;
+                        }
+                    }
+                });
+
+                document.addEventListener('pointerup', (e) => {
+                    if (App.timeDragState && App.timeDragState.active) {
+                        const currentY = e.clientY || (e.changedTouches && e.changedTouches[0].clientY);
+                        const deltaY = currentY - App.timeDragState.startY;
+                        
+                        let newMinutes = App.timeDragState.startMinutes + Math.floor(deltaY);
+                        newMinutes = Math.max(0, Math.min(23 * 60 + 59, newMinutes));
+                        
+                        const newH = Math.floor(newMinutes / 60);
+                        const newM = newMinutes % 60;
+                        const timeStr = `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+                        
+                        let item = null;
+                        if (App.timeDragState.type === 'subtask') {
+                            const parent = AppState.tasks.find(t => t.id === App.timeDragState.parentId);
+                            if (parent && parent.subtasks) item = parent.subtasks.find(s => s.id === App.timeDragState.id);
+                        } else if (App.timeDragState.type === 'task') {
+                            item = AppState.tasks.find(t => t.id === App.timeDragState.id);
+                        } else if (App.timeDragState.type === 'slot') {
+                            item = AppState.availabilities.find(a => a.id === App.timeDragState.id);
+                        }
+                        
+                        if (item) {
+                            if (App.timeDragState.type === 'slot') {
+                                item.start = timeStr;
+                                let endMinutes = newMinutes + App.timeDragState.duration;
+                                item.end = `${String(Math.floor(endMinutes/60)%24).padStart(2,'0')}:${String(endMinutes%60).padStart(2,'0')}`;
+                            } else {
+                                item.scheduledTime = timeStr;
+                            }
+                            App.saveToCloud();
+                            App.render();
+                        }
+                        
+                        App.timeDragState = null;
+                    }
+                });
+
                 this.checkMissedTasks();
 
                 const lastSeenVersion = localStorage.getItem('osdevie_last_seen_version');
