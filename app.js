@@ -336,10 +336,21 @@ const App = {
 
     // --- FICHE TÂCHE UNIFIÉE ---
     openNewTaskModal(projectId = null) {
-        const defDate = AppState.activeTab === 'calendar' ? AppState.selectedDate : null;
+        let defDate = null;
+        let defTime = '';
+        if (AppState.activeTab === 'calendar') {
+            defDate = AppState.selectedDate;
+            const now = new Date();
+            let minutes = now.getHours() * 60 + now.getMinutes();
+            let roundedMinutes = Math.ceil(minutes / 30) * 30;
+            let h = Math.floor(roundedMinutes / 60) % 24;
+            let m = roundedMinutes % 60;
+            defTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        }
+
         AppState.taskModal = { 
             id: Date.now().toString(), parentId: null, isNew: true,
-            data: { name: '', projectId: projectId, duration: 15, locations: [], priority: 'Moyenne', note: '', scheduledDate: defDate, scheduledTime: '' } 
+            data: { name: '', projectId: projectId, duration: 15, locations: [], priority: 'Moyenne', note: '', scheduledDate: defDate, scheduledTime: defTime } 
         };
         this.render();
     },
@@ -813,7 +824,7 @@ const App = {
         });
 
         // === DESCRIPTIF : TIMELINE RELATIVE AVEC GESTION DES SAUTS DE TEMPS ("...") ===
-        let timelineHtml = `<div class="relative space-y-3 mt-2 border-l border-gray-800 ml-16">`;
+        let timelineHtml = `<div class="relative space-y-3 mt-2 border-l border-gray-800 ml-10">`;
 
         const now = new Date();
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
@@ -828,7 +839,7 @@ const App = {
             if (isToday) {
                 timelineHtml += `
                 <div class="relative h-px mb-4 z-20">
-                    <span class="absolute -left-[55px] w-12 text-[10px] font-black text-red-500 text-right -top-2 bg-[#1A1D24] px-1 rounded z-30">${timeStr}</span>
+                    <span class="absolute -left-[48px] w-10 text-[10px] font-black text-red-500 text-right -top-2 bg-[#1A1D24] px-1 rounded z-30">${timeStr}</span>
                     <div class="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="top: -4px;"></div>
                 </div>`;
             }
@@ -854,7 +865,7 @@ const App = {
                 if (isToday && !timeLineDrawn && currentMinutes < startMin && (lastEndMin === null || currentMinutes >= lastEndMin)) {
                     timelineHtml += `
                     <div class="relative h-px mb-4 mt-2 z-20">
-                        <span class="absolute -left-[55px] w-12 text-[10px] font-black text-red-500 text-right -top-2 px-1 rounded z-30">${timeStr}</span>
+                        <span class="absolute -left-[48px] w-10 text-[10px] font-black text-red-500 text-right -top-2 px-1 rounded z-30">${timeStr}</span>
                         <div class="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="top: -4px;"></div>
                     </div>`;
                     timeLineDrawn = true;
@@ -869,7 +880,7 @@ const App = {
                     // Ajout de "left-0" au parent pour ignorer le padding et aligner le point rouge avec le point cyan. Suppression du fond sombre du texte.
                     inlineRedLine = `
                     <div class="absolute left-0 w-full z-20 pointer-events-none" style="top: ${progress * 100}%;">
-                        <span class="absolute -left-[55px] w-12 text-[10px] font-black text-red-500 text-right px-1 rounded z-30" style="margin-top: -8px;">${timeStr}</span>
+                        <span class="absolute -left-[48px] w-10 text-[10px] font-black text-red-500 text-right px-1 rounded z-30" style="margin-top: -8px;">${timeStr}</span>
                         <div class="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="margin-top: -5px;"></div>
                     </div>`;
                     timeLineDrawn = true;
@@ -891,7 +902,7 @@ const App = {
                     }
                     
                     timelineHtml += `
-                    <div class="relative pl-8 pb-3 transition-colors border border-transparent flex flex-col" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'task', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
+                    <div class="relative pl-5 pb-3 transition-colors border border-transparent flex flex-col" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'task', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
                         <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-cyan-500 border border-[#0D0F12]'} z-10"></div>
                         ${inlineRedLine}
                         
@@ -914,7 +925,7 @@ const App = {
                     </div>`;
                 } else if (ev.type === 'slot') {
                     timelineHtml += `
-                    <div class="relative pl-8 pb-3 transition-colors border border-transparent flex flex-col" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'slot', '${ev.id}')">
+                    <div class="relative pl-5 pb-3 transition-colors border border-transparent flex flex-col" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'slot', '${ev.id}')">
                         <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full bg-indigo-500 border border-[#0D0F12] animate-pulse z-10"></div>
                         ${inlineRedLine}
                         
@@ -939,7 +950,7 @@ const App = {
             if (isToday && !timeLineDrawn && currentMinutes > lastEndMin) {
                 timelineHtml += `
                 <div class="relative h-px mb-4 mt-2 z-20">
-                    <span class="absolute -left-[55px] w-12 text-[10px] font-black text-red-500 text-right -top-2 px-1 rounded z-30">${timeStr}</span>
+                    <span class="absolute -left-[48px] w-10 text-[10px] font-black text-red-500 text-right -top-2 px-1 rounded z-30">${timeStr}</span>
                     <div class="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="top: -4px;"></div>
                 </div>`;
             }
@@ -954,7 +965,10 @@ const App = {
                     <button onclick="App.toggleCalendarView()" class="ml-1 text-gray-400 hover:text-cyan-400 bg-[#1A1D24] p-1.5 rounded-xl border border-gray-800 transition-colors shadow-sm"><i data-lucide="${AppState.isCalendarExpanded ? 'chevron-up' : 'chevron-down'}" class="w-4 h-4"></i></button>
                     <button onclick="App.goToToday()" class="ml-1 text-[9px] font-bold uppercase tracking-wider text-gray-400 hover:text-cyan-400 bg-[#1A1D24] px-2 py-1.5 rounded-xl border border-gray-800 transition-colors shadow-sm">Aujourd'hui</button>
                 </h2>
-                <button onclick="App.openAvailabilityModal()" class="px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-xs font-bold shrink-0">+ Créneau</button>
+                <div class="flex gap-1.5">
+                    <button onclick="App.openNewTaskModal()" class="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-bold shrink-0">+ Tâche</button>
+                    <button onclick="App.openAvailabilityModal()" class="px-2.5 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-xs font-bold shrink-0">+ Créneau libre</button>
+                </div>
             </div>
             ${datesHtml}
             <div class="bg-[#1A1D24] p-4 rounded-3xl border border-gray-800 shadow-xl min-h-[50vh]">
@@ -1004,7 +1018,7 @@ const App = {
     renderProjects() {
         let html=`<div class="space-y-4">
             <div class="flex justify-between items-center mb-6 px-1">
-                <h2 class="text-xl font-black text-white">Chantiers & Base</h2>
+                <h2 class="text-xl font-black text-white">Base</h2>
                 <div class="flex gap-1.5">
                     <button onclick="App.toggleAddCategory()" class="h-8 px-2 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-[10px] font-bold">+ Dossier</button>
                     <button onclick="App.toggleAddProject()" class="h-8 px-2 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-[10px] font-bold">+ Projet</button>
@@ -1371,20 +1385,18 @@ const App = {
             const selectedDate = document.getElementById('selected-calendar-date');
             
             if (picker && selectedDate) {
-                const centerPosition = selectedDate.offsetLeft - (picker.clientWidth / 2) + (selectedDate.clientWidth / 2);
-                
                 if (wasOnCalendar) {
-                    // Si on était DÉJÀ sur le calendrier, on remet le scroll où il était INSTANTANÉMENT
                     picker.scrollLeft = savedScroll;
-                    
-                    // Puis on glisse doucement vers la nouvelle date cliquée
-                    setTimeout(() => {
-                        picker.scrollTo({ left: centerPosition, behavior: 'smooth' });
-                    }, 10);
-                } else {
-                    // Si on vient d'un autre onglet, on centre directement la date actuelle, sans animation (instantané)
-                    picker.scrollLeft = centerPosition;
                 }
+                
+                setTimeout(() => {
+                    const centerPosition = selectedDate.offsetLeft - (picker.clientWidth / 2) + (selectedDate.clientWidth / 2);
+                    if (wasOnCalendar) {
+                        picker.scrollTo({ left: centerPosition, behavior: 'smooth' });
+                    } else {
+                        picker.scrollLeft = centerPosition;
+                    }
+                }, 50);
             }
         }
     },

@@ -3,9 +3,14 @@
 // ==========================================
 export const RELEASE_HISTORY = [
     {
-    version: "1.7.8",
-    title: "Timeline Épurée, Timeblocking Proportonnell & Bouton Aujourd'hui",
-    notes: "• 🎯 <b>Timeline épurée :</b> Suppression de la grande ligne rouge horizontale pour un affichage plus propre et moderne.<br>• 📍 <b>Alignement parfait :</b> L'heure actuelle en rouge et les heures fixes (10h00, 11h00...) sont désormais positionnées de manière fixe sur la gauche, en parfaite harmonie avec la ligne verticale principale.<br>• ⏱️ <b>Timeblocking visuel :</b> Les hauteurs des blocs de tâches et de créneaux s'étirent automatiquement de façon proportionnelle au temps qu'ils durent, avec leurs heures échelonnées heure par heure.<br>• 👁️ <b>Indicateurs visuels :</b> Les dates comportant des tâches affichent désormais un discret point cyan de repérage dans les deux modes d'affichage du calendrier.<br>• 📅 <b>Navigation étendue & Bouton 'Aujourd'hui' :</b> Profitez d'une vue mensuelle déroulante sur plusieurs années et d'un bouton de retour rapide à la date du jour."
+        version: "1.8.0",
+        title: "Planification Intuitive & Suivi",
+        notes: "• ⚡ Planification : Glissez une tâche pour modifier son heure. L'ajout d'une tâche depuis le calendrier cible automatiquement la prochaine demi-heure. Heures de début/fin visibles sur les cartes.<br>• 🗓️ Navigation : Focus direct sur le jour actuel à l'ouverture du calendrier. Repositionnement de l'heure et bouton 'Aujourd'hui' toujours actif.<br>• ✅ Validation : Les tâches non terminées 24h après leur période de fin sont notifiées (avec option de retour dans la Base)."
+    },
+    {
+        version: "1.7.8",
+        title: "Timeline Épurée, Timeblocking Proportonnell & Bouton Aujourd'hui",
+        notes: "• 🎯 <b>Timeline épurée :</b> Suppression de la grande ligne rouge horizontale pour un affichage plus propre et moderne.<br>• 📍 <b>Alignement parfait :</b> L'heure actuelle en rouge et les heures fixes (10h00, 11h00...) sont désormais positionnées de manière fixe sur la gauche, en parfaite harmonie avec la ligne verticale principale.<br>• ⏱️ <b>Timeblocking visuel :</b> Les hauteurs des blocs de tâches et de créneaux s'étirent automatiquement de façon proportionnelle au temps qu'ils durent, avec leurs heures échelonnées heure par heure.<br>• 👁️ <b>Indicateurs visuels :</b> Les dates comportant des tâches affichent désormais un discret point cyan de repérage dans les deux modes d'affichage du calendrier.<br>• 📅 <b>Navigation étendue & Bouton 'Aujourd'hui' :</b> Profitez d'une vue mensuelle déroulante sur plusieurs années et d'un bouton de retour rapide à la date du jour."
     },
     {
         version: "1.7.7",
