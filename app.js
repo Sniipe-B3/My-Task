@@ -84,35 +84,45 @@ const AppState = {
 const App = {
     timeDragState: null,
     
-    startTaskTimeDrag(e, type, id, parentId) {
-        let targetList = type === 'slot' ? AppState.availabilities : AppState.tasks;
-        let item = null;
+    startTaskTimeDrag(e, type, id, parentId = null) {
+        if (e.target.closest('button')) return; 
+
+        e.preventDefault(); 
         
-        if (type === 'subtask') {
-            const parent = AppState.tasks.find(t => t.id === parentId);
-            if (parent && parent.subtasks) item = parent.subtasks.find(s => s.id === id);
+        let item = null;
+        if (type === 'slot') {
+            item = AppState.availabilities.find(a => a.id === id);
         } else {
-            item = targetList.find(t => t.id === id);
+            let task = AppState.tasks.find(t => t.id === (type === 'subtask' ? parentId : id));
+            if (!task) return;
+            item = type === 'subtask' ? task.subtasks.find(s => s.id === id) : task;
         }
         
-        if (!item) return;
-
+        if (!item || (type !== 'slot' && item.status === 'done')) return; 
+        
         let timeStr = type === 'slot' ? item.start : (item.scheduledTime || '23:59');
         const [h, m] = timeStr.split(':').map(Number);
         
-        let card = e.currentTarget.closest('.draggable-card');
+        let wrapper = e.currentTarget.closest('.absolute.z-10');
+        let card = wrapper ? wrapper.querySelector('.draggable-card') : null;
         let timeDisplay = card ? card.querySelector('.task-time-display') : null;
+        
+        let wrapperRect = wrapper ? wrapper.getBoundingClientRect() : null;
+        let clientY = e.clientY || (e.touches && e.touches[0].clientY);
+        let grabOffsetY = wrapperRect ? clientY - wrapperRect.top : 0;
 
         if (App.timeDragState && App.timeDragState.timeoutId) clearTimeout(App.timeDragState.timeoutId);
 
         App.timeDragState = {
             active: false,
-            startY: e.clientY || (e.touches && e.touches[0].clientY),
-            lastClientY: e.clientY || (e.touches && e.touches[0].clientY),
+            startY: clientY,
+            lastClientY: clientY,
+            grabOffsetY: grabOffsetY,
             startMinutes: h * 60 + m,
             id: id,
             type: type,
             parentId: parentId,
+            wrapper: wrapper,
             card: card,
             timeDisplay: timeDisplay,
             duration: item.duration || 15,
@@ -122,53 +132,20 @@ const App = {
 
         App.timeDragState.timeoutId = setTimeout(() => {
             if (App.timeDragState) {
-                let scrollArea = document.getElementById('timeline-scroll-area');
-                let oldScrollTop = scrollArea ? scrollArea.scrollTop : 0;
-                let oldVis = App.getVisibleHours(); // Récupère l'ancien état AVANT d'activer
-                let oldOffset = App.getTimeOffset(App.timeDragState.startMinutes, oldVis);
-                
                 App.timeDragState.active = true;
-                
                 if (navigator.vibrate) navigator.vibrate(50);
-
-                let oldWrapper = document.getElementById(`draggable-${App.timeDragState.id}`);
-                if (oldWrapper) {
-                    oldWrapper.id = "temp-drag-save";
-                    document.body.appendChild(oldWrapper);
+                
+                if (App.timeDragState.wrapper) {
+                    App.timeDragState.wrapper.style.zIndex = '50';
+                    App.timeDragState.wrapper.style.transition = 'none';
                 }
                 
-                // Forcer le rendu avec tous les sauts de temps ouverts
-                App.render();
-                
-                scrollArea = document.getElementById('timeline-scroll-area');
-                let newVis = App.getVisibleHours(); // Devrait maintenant renvoyer 24h
-                let newOffset = App.getTimeOffset(App.timeDragState.startMinutes, newVis);
-                
-                if (scrollArea) {
-                    let diff = newOffset - oldOffset;
-                    scrollArea.scrollTop = oldScrollTop + diff;
-                }
-
-                let newWrapper = document.getElementById(`draggable-${App.timeDragState.id}`);
-                if (newWrapper && oldWrapper) {
-                    let container = newWrapper.parentNode;
-                    oldWrapper.id = `draggable-${App.timeDragState.id}`;
-                    oldWrapper.style.top = newWrapper.style.top;
-                    oldWrapper.style.left = newWrapper.style.left;
-                    oldWrapper.style.width = newWrapper.style.width;
-                    oldWrapper.style.height = newWrapper.style.height;
-                    container.insertBefore(oldWrapper, newWrapper);
-                    container.removeChild(newWrapper);
-                    App.timeDragState.card = oldWrapper;
-                } else {
-                    App.timeDragState.card = document.getElementById(`draggable-${App.timeDragState.id}`);
-                }
-
                 if (App.timeDragState.card) {
-                    App.timeDragState.timeDisplay = App.timeDragState.card.querySelector('.task-time-display');
                     App.timeDragState.card.style.transform = 'scale(0.98)';
-                    App.timeDragState.card.style.transition = 'none';
-                    App.timeDragState.card.style.zIndex = '50';
+                }
+                
+                if (App.timeDragState.timeDisplay) {
+                    App.timeDragState.timeDisplay.classList.add('text-red-400');
                 }
             }
         }, 400);
@@ -759,22 +736,17 @@ const App = {
             ${!isDone ? `<i data-lucide="chevron-right" class="w-5 h-5 text-gray-600"></i>` : ''}
         </div>`;
     },
-    getVisibleHours() {
-        if (App.timeDragState && App.timeDragState.active) {
-            let all = new Set();
-            for(let i=0; i<=24; i++) all.add(i);
-            return all;
-        }
-        let visible = new Set();
-        
-        // Add current hour if viewing today
+    getActiveIntervals() {
+        let intervals = [];
         if (AppState.selectedDate === getTodayString()) {
-            visible.add(new Date().getHours());
+            let now = new Date();
+            let m = now.getHours()*60 + now.getMinutes();
+            intervals.push({ start: Math.max(0, m - 15), end: Math.min(24*60, m + 15) }); 
         }
         
         let events = [...AppState.tasks.filter(t => t.scheduledDate === AppState.selectedDate),
                       ...AppState.availabilities.filter(a => a.date === AppState.selectedDate)];
-        
+                      
         events.forEach(ev => {
             let start = 0, end = 0;
             if (ev.type === 'slot' || ev.start) {
@@ -786,123 +758,106 @@ const App = {
                 start = parseInt(ev.scheduledTime.split(':')[0])*60 + parseInt(ev.scheduledTime.split(':')[1]);
                 end = start + (ev.duration || 15);
             }
-            let sh = Math.floor(start/60);
-            let eh = Math.floor(end/60) + 1;
-            for(let i=sh; i<=eh; i++) visible.add(i);
+            intervals.push({ start: start, end: end });
         });
-        return visible;
+        
+        if (intervals.length === 0) return [];
+        
+        intervals.sort((a,b) => a.start - b.start);
+        
+        let merged = [intervals[0]];
+        for(let i=1; i<intervals.length; i++) {
+            let last = merged[merged.length-1];
+            let curr = intervals[i];
+            if (curr.start <= last.end + 5) {
+                last.end = Math.max(last.end, curr.end);
+            } else {
+                merged.push(curr);
+            }
+        }
+        return merged;
+    },
+    
+    mapMinsToPixels(mins) {
+        if (mins <= 30) return mins * 3;
+        if (mins <= 60) return 90 + (mins - 30) * 2;
+        if (mins <= 120) return 150 + (mins - 60) * 1;
+        return 210 + (mins - 120) * 0.5;
     },
 
-    getTimeOffset(minutes, visibleSet) {
+    mapPixelsToMins(px) {
+        if (px <= 90) return px / 3;
+        if (px <= 150) return 30 + (px - 90) / 2;
+        if (px <= 210) return 60 + (px - 150) / 1;
+        return 120 + (px - 210) / 0.5;
+    },
+
+    getTimeOffset(minutes, intervals) {
+        if (intervals.length === 0) return 0;
         let y = 0;
-        let targetHour = Math.floor(minutes / 60);
-        let targetMin = minutes % 60;
+        let lastEnd = 0;
         
-        for(let h=0; h < targetHour; h++) {
-            if(visibleSet.has(h)) y += 180;
-            else if(h === 0 || visibleSet.has(h-1)) y += 20; // gap marker
+        for (let i=0; i<intervals.length; i++) {
+            let intv = intervals[i];
+            
+            if (intv.start > lastEnd) {
+                if (minutes >= lastEnd && minutes < intv.start) {
+                    let progress = (minutes - lastEnd) / (intv.start - lastEnd);
+                    return y + 20 * progress;
+                }
+                y += 20; 
+            }
+            
+            if (minutes <= intv.end) {
+                return y + this.mapMinsToPixels(minutes - intv.start);
+            }
+            
+            y += this.mapMinsToPixels(intv.end - intv.start);
+            lastEnd = intv.end;
         }
-        if (visibleSet.has(targetHour)) y += targetMin * 3;
-        else y += 10;
+        
+        if (minutes > lastEnd) {
+            let progress = Math.min(1, (minutes - lastEnd) / (24*60 - lastEnd));
+            return y + 100 * progress;
+        }
+        
         return y;
     },
     
-    getMinutesFromY(targetY, visibleSet) {
+    getMinutesFromY(targetY, intervals) {
+        if (intervals.length === 0) return 0;
         let currentY = 0;
-        for(let h=0; h<=24; h++) {
-            let hHeight = visibleSet.has(h) ? 180 : (h===0 || visibleSet.has(h-1) ? 20 : 0);
-            if (h === 24 && visibleSet.has(h)) hHeight = 0;
-            if (targetY >= currentY && targetY <= currentY + hHeight && hHeight > 0) {
-                if (visibleSet.has(h)) {
-                    let min = (targetY - currentY) / 3;
-                    return Math.max(0, Math.min(23*60+55, h * 60 + min));
+        let lastEnd = 0;
+        
+        for (let i=0; i<intervals.length; i++) {
+            let intv = intervals[i];
+            
+            if (intv.start > lastEnd) {
+                if (targetY >= currentY && targetY < currentY + 20) {
+                    let progress = (targetY - currentY) / 20;
+                    return lastEnd + (intv.start - lastEnd) * progress;
                 }
-                return h * 60; // snapped to gap start
+                currentY += 20;
             }
+            
+            let hHeight = this.mapMinsToPixels(intv.end - intv.start);
+            if (targetY >= currentY && targetY <= currentY + hHeight) {
+                let minOffset = this.mapPixelsToMins(targetY - currentY);
+                return intv.start + minOffset;
+            }
+            
             currentY += hHeight;
+            lastEnd = intv.end;
         }
-        return 23*60 + 55;
+        
+        if (targetY > currentY) {
+             let progress = Math.min(1, (targetY - currentY) / 100);
+             return lastEnd + ((24*60) - lastEnd) * progress;
+        }
+        return lastEnd;
     },
 
     renderCalendar() {
-        const priorityColors = {'Urgence':'text-red-400 border-red-500/30', 'Haute':'text-purple-400 border-purple-500/30','Moyenne':'text-amber-400 border-amber-500/30','Basse':'text-blue-400 border-blue-500/30'};
-
-        const todayDate = new Date();
-        const months = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Aoû','Sep','Oct','Nov','Déc'];
-        const fullMonths = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
-        
-        let datesHtml = '';
-
-        if (!AppState.isCalendarExpanded) {
-            // VUE CLASSIQUE : Carrousel Horizontal étendu sur ~6 ans (de -1 an à +5 ans)
-            const dates = [];
-            const startDay = new Date(todayDate); 
-            startDay.setDate(todayDate.getDate() - 365); // On commence 1 an en arrière
-            
-            for (let i=0; i<2190; i++) { // Environ 6 ans de jours générés (ex: 2024 à 2030)
-                const d = new Date(startDay); d.setDate(startDay.getDate() + i);
-                const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-                const dayName = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'][d.getDay()];
-                const monthName = months[d.getMonth()];
-                dates.push({ date: dStr, label: dayName, num: d.getDate(), month: monthName, isToday: dStr === getTodayString() });
-            }
-
-            datesHtml = `<div class="flex gap-2 overflow-x-auto pb-4 no-scrollbar" id="calendar-date-picker">`;
-            dates.forEach(d => {
-                const isSelected = d.date === AppState.selectedDate;
-                // Vérification de la présence d'événements pour ce jour
-                const hasEvents = AppState.tasks.some(t => t.scheduledDate === d.date || (t.subtasks && t.subtasks.some(s => s.scheduledDate === d.date))) || AppState.availabilities.some(a => a.date === d.date);
-
-                datesHtml += `
-                <div ${isSelected ? 'id="selected-calendar-date"' : ''} onclick="App.selectDate('${d.date}')" class="relative flex flex-col items-center justify-center min-w-[55px] p-2 rounded-2xl cursor-pointer transition-all border ${isSelected ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]' : d.isToday ? 'bg-[#1A1D24] border-gray-600' : 'bg-[#0D0F12] border-gray-800 hover:border-gray-700'}">
-                    <span class="text-[10px] font-bold uppercase ${isSelected ? 'text-black' : d.isToday ? 'text-cyan-400' : 'text-gray-500'}">${d.label}</span>
-                    <span class="text-lg font-black ${isSelected ? 'text-black' : 'text-white'}">${d.num}</span>
-                    <span class="text-[9px] font-bold uppercase ${isSelected ? 'text-black' : 'text-gray-500'}">${d.month}</span>
-                    ${hasEvents ? `<div class="absolute bottom-1 w-1 h-1 rounded-full ${isSelected ? 'bg-black/50' : 'bg-cyan-400'}"></div>` : ''}
-                </div>`;
-            });
-            datesHtml += `</div>`;
-        } else {
-            // VUE AGRANDIE : Grille Mensuelle
-            const [selY, selM, selD] = AppState.selectedDate.split('-').map(Number);
-            const firstDayOfMonth = new Date(selY, selM - 1, 1);
-            const daysInMonth = new Date(selY, selM, 0).getDate();
-            let startingDay = firstDayOfMonth.getDay() - 1; // 0 = Lundi
-            if (startingDay === -1) startingDay = 6; // Si c'est Dimanche
-            
-            datesHtml = `<div class="bg-[#1A1D24] p-4 rounded-3xl border border-gray-800 shadow-xl mb-4">
-                <div class="flex justify-between items-center mb-4">
-                    <button onclick="App.changeMonth(-1)" class="p-2 text-gray-500 hover:text-cyan-400 bg-[#0D0F12] rounded-lg border border-gray-800"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
-                    <span class="text-sm font-black text-white uppercase tracking-widest">${fullMonths[selM-1]} ${selY}</span>
-                    <button onclick="App.changeMonth(1)" class="p-2 text-gray-500 hover:text-cyan-400 bg-[#0D0F12] rounded-lg border border-gray-800"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
-                </div>
-                <div class="grid grid-cols-7 gap-1 text-center mb-2">
-                    ${['L','M','M','J','V','S','D'].map(d => `<div class="text-[10px] font-bold text-gray-500 uppercase">${d}</div>`).join('')}
-                </div>
-                <div class="grid grid-cols-7 gap-1">`;
-            
-            // Cases vides pour l'alignement
-            for (let i = 0; i < startingDay; i++) {
-                datesHtml += `<div></div>`;
-            }
-            // Cases des jours
-            for (let i = 1; i <= daysInMonth; i++) {
-                const dStr = `${selY}-${String(selM).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
-                const isSelected = dStr === AppState.selectedDate;
-                const isToday = dStr === getTodayString();
-                
-                // Petit point cyan si des tâches/créneaux existent ce jour-là
-                const hasEvents = AppState.tasks.some(t => t.scheduledDate === dStr || (t.subtasks && t.subtasks.some(s => s.scheduledDate === dStr))) || AppState.availabilities.some(a => a.date === dStr);
-                
-                datesHtml += `
-                <div onclick="App.selectDate('${dStr}')" class="flex flex-col items-center justify-center p-2 rounded-xl cursor-pointer transition-all border ${isSelected ? 'bg-cyan-500 border-cyan-400 text-black shadow-[0_0_10px_rgba(6,182,212,0.4)]' : isToday ? 'bg-[#2a2f3a] border-gray-500 text-cyan-400' : 'bg-[#0D0F12] border-gray-800 text-white hover:border-gray-700 hover:bg-[#1f232b]'}">
-                    <span class="text-sm font-bold ${isSelected ? 'text-black' : ''}">${i}</span>
-                    <div class="w-1 h-1 mt-0.5 rounded-full ${hasEvents ? (isSelected ? 'bg-black/50' : 'bg-cyan-400') : 'bg-transparent'}"></div>
-                </div>`;
-            }
-            datesHtml += `</div></div>`;
-        }
-
         let dayEvents = [];
         
         AppState.tasks.forEach(t => {
@@ -930,29 +885,83 @@ const App = {
             return timeA.localeCompare(timeB);
         });
 
-        // === DESCRIPTIF : TIMELINE ABSOLUE AVEC GESTION DES SAUTS DE TEMPS ("...") ===
-        let visibleHours = this.getVisibleHours();
-        let totalTimelineHeight = this.getTimeOffset(24*60, visibleHours);
+        let activeIntervals = this.getActiveIntervals();
+        let totalTimelineHeight = this.getTimeOffset(24*60, activeIntervals);
         
         let timelineHtml = `<div id="timeline-scroll-container" class="relative w-full" style="height: ${totalTimelineHeight}px; min-height: 200px;">`;
         timelineHtml += `<div class="absolute left-10 top-0 bottom-0 border-l border-gray-800 z-0"></div>`;
+        
 
-        // BUILD BACKGROUND GRID
-        let currentY = 0;
-        for (let h = 0; h <= 24; h++) {
-            if (visibleHours.has(h)) {
-                let label = `${String(h%24).padStart(2,'0')}:00`;
-                let hHeight = h === 24 ? 0 : 180;
-                timelineHtml += `<div class="absolute w-full border-t border-gray-800/40 z-0" style="top: ${currentY}px; height: ${hHeight}px;">
-                    <span class="absolute -top-2 left-0 text-[10px] font-black text-gray-500 w-10 text-center bg-[#1A1D24]">${label}</span>
-                </div>`;
-                currentY += hHeight;
-            } else {
-                if (h === 0 || visibleHours.has(h - 1)) {
-                    timelineHtml += `<div class="absolute w-full z-0" style="top: ${currentY}px; height: 20px;"></div>`;
-                    currentY += 20;
-                }
+        const priorityColors = {'Urgence':'text-red-400 border-red-500/30', 'Haute':'text-purple-400 border-purple-500/30','Moyenne':'text-amber-400 border-amber-500/30','Basse':'text-blue-400 border-blue-500/30'};
+
+        const todayDate = new Date();
+        const months = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Aoû','Sep','Oct','Nov','Déc'];
+        const fullMonths = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+        
+        let datesHtml = '';
+
+        if (!AppState.isCalendarExpanded) {
+            const dates = [];
+            const startDay = new Date(todayDate); 
+            startDay.setDate(todayDate.getDate() - 365); 
+            
+            for (let i=0; i<2190; i++) {
+                const d = new Date(startDay); d.setDate(startDay.getDate() + i);
+                const dStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                const dayName = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'][d.getDay()];
+                const monthName = months[d.getMonth()];
+                dates.push({ date: dStr, label: dayName, num: d.getDate(), month: monthName, isToday: dStr === getTodayString() });
             }
+
+            datesHtml = `<div class="flex gap-2 overflow-x-auto pb-4 no-scrollbar" id="calendar-date-picker">`;
+            dates.forEach(d => {
+                const isSelected = d.date === AppState.selectedDate;
+                const hasEvents = AppState.tasks.some(t => t.scheduledDate === d.date || (t.subtasks && t.subtasks.some(s => s.scheduledDate === d.date))) || AppState.availabilities.some(a => a.date === d.date);
+
+                datesHtml += `
+                <div ${isSelected ? 'id="selected-calendar-date"' : ''} onclick="App.selectDate('${d.date}')" class="relative flex flex-col items-center justify-center min-w-[55px] p-2 rounded-2xl cursor-pointer transition-all border ${isSelected ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]' : d.isToday ? 'bg-[#1A1D24] border-gray-600' : 'bg-[#0D0F12] border-gray-800 hover:border-gray-700'}">
+                    <span class="text-[10px] font-bold uppercase ${isSelected ? 'text-black' : d.isToday ? 'text-cyan-400' : 'text-gray-500'}">${d.label}</span>
+                    <span class="text-lg font-black ${isSelected ? 'text-black' : 'text-white'}">${d.num}</span>
+                    <span class="text-[9px] font-bold uppercase ${isSelected ? 'text-black' : 'text-gray-500'}">${d.month}</span>
+                    ${hasEvents ? `<div class="absolute bottom-1 w-1 h-1 rounded-full ${isSelected ? 'bg-black/50' : 'bg-cyan-400'}"></div>` : ''}
+                </div>`;
+            });
+            datesHtml += `</div>`;
+        } else {
+            const [selY, selM, selD] = AppState.selectedDate.split('-').map(Number);
+            const firstDayOfMonth = new Date(selY, selM - 1, 1);
+            const daysInMonth = new Date(selY, selM, 0).getDate();
+            let startingDay = firstDayOfMonth.getDay() - 1; 
+            if (startingDay === -1) startingDay = 6;
+            
+            datesHtml = `<div class="bg-[#1A1D24] p-4 rounded-3xl border border-gray-800 shadow-xl mb-4">
+                <div class="flex justify-between items-center mb-4">
+                    <button onclick="App.changeMonth(-1)" class="p-2 text-gray-500 hover:text-cyan-400 bg-[#0D0F12] rounded-lg border border-gray-800"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+                    <span class="text-sm font-black text-white uppercase tracking-widest">${fullMonths[selM-1]} ${selY}</span>
+                    <button onclick="App.changeMonth(1)" class="p-2 text-gray-500 hover:text-cyan-400 bg-[#0D0F12] rounded-lg border border-gray-800"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+                </div>
+                <div class="grid grid-cols-7 gap-1 text-center mb-2">
+                    ${['L','M','M','J','V','S','D'].map(d => `<div class="text-[10px] font-bold text-gray-500 uppercase">${d}</div>`).join('')}
+                </div>
+                <div class="grid grid-cols-7 gap-1">`;
+            
+            for (let i = 0; i < startingDay; i++) {
+                datesHtml += `<div></div>`;
+            }
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dStr = `${selY}-${String(selM).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
+                const isSelected = dStr === AppState.selectedDate;
+                const isToday = dStr === getTodayString();
+                
+                const hasEvents = AppState.tasks.some(t => t.scheduledDate === dStr || (t.subtasks && t.subtasks.some(s => s.scheduledDate === dStr))) || AppState.availabilities.some(a => a.date === dStr);
+                
+                datesHtml += `
+                <div onclick="App.selectDate('${dStr}')" class="flex flex-col items-center justify-center p-2 rounded-xl cursor-pointer transition-all border ${isSelected ? 'bg-cyan-500 border-cyan-400 text-black shadow-[0_0_10px_rgba(6,182,212,0.4)]' : isToday ? 'bg-[#2a2f3a] border-gray-500 text-cyan-400' : 'bg-[#0D0F12] border-gray-800 text-white hover:border-gray-700 hover:bg-[#1f232b]'}">
+                    <span class="text-sm font-bold ${isSelected ? 'text-black' : ''}">${i}</span>
+                    <div class="w-1 h-1 mt-0.5 rounded-full ${hasEvents ? (isSelected ? 'bg-black/50' : 'bg-cyan-400') : 'bg-transparent'}"></div>
+                </div>`;
+            }
+            datesHtml += `</div></div>`;
         }
 
         const now = new Date();
@@ -961,7 +970,7 @@ const App = {
         const isToday = AppState.selectedDate === getTodayString();
         
         if (isToday) {
-            let nowY = this.getTimeOffset(currentMinutes, visibleHours);
+            let nowY = this.getTimeOffset(currentMinutes, activeIntervals);
             timelineHtml += `
             <div class="absolute left-0 w-full z-20 pointer-events-none" style="top: ${nowY}px;">
                 <span class="absolute left-0 w-10 text-[10px] font-black text-red-500 text-center bg-[#1A1D24]" style="margin-top: -7px;">${timeStr}</span>
@@ -970,11 +979,9 @@ const App = {
             </div>`;
         }
 
-        // BUILD ABSOLUTE TASKS
         if (dayEvents.length === 0 && !isToday) {
             timelineHtml += `<div class="py-10 text-center text-gray-500 text-sm font-semibold relative z-10 ml-12">Rien de prévu à cette date.</div>`;
         } else {
-            // Group and Layout for overlap
             let groups = [];
             dayEvents.forEach(ev => {
                 let start = ev.type === 'slot' ? (parseInt(ev.start.split(':')[0])*60 + parseInt(ev.start.split(':')[1])) : 
@@ -983,7 +990,7 @@ const App = {
                 
                 let placed = false;
                 for (let g of groups) {
-                    if (start < g.end + 10) { // overlap threshold
+                    if (start < g.end + 10) { 
                         g.events.push(ev);
                         g.end = Math.max(g.end, start + (ev.duration || 30));
                         placed = true;
@@ -995,14 +1002,14 @@ const App = {
 
             groups.forEach(g => {
                 g.events.forEach((ev, idx) => {
-                    let y = this.getTimeOffset(ev._startMin, visibleHours);
+                    let y = this.getTimeOffset(ev._startMin, activeIntervals);
                     let leftBase = 46;
-                    let leftOffset = leftBase + (idx * 16); // cascade offset
+                    let leftOffset = leftBase + (idx * 16); 
                     let widthStr = `calc(100% - ${leftOffset}px - 4px)`;
                     
                     if (ev.type === 'task') {
                         let duration = ev.duration || 15;
-                        let heightStr = `height: ${Math.max(duration * 3, 50)}px;`;
+                        let heightStr = `height: ${Math.max(App.mapMinsToPixels(duration), 90)}px;`;
                         
                         const isDone = ev.status === 'done';
                         const startTimeDisp = ev.scheduledTime || '--:--';
@@ -1014,6 +1021,12 @@ const App = {
                         
                         timelineHtml += `
                         <div id="draggable-${ev.id}" class="absolute z-10 transition-transform" style="top: ${y}px; left: ${leftOffset}px; width: ${widthStr}; ${heightStr}">
+                            <div class="task-boundary-start absolute border-t border-gray-800/40 pointer-events-none z-[-1]" style="top: 0px; left: -${leftOffset}px; width: 100vw;">
+                                <span class="task-boundary-label-start absolute -top-2 left-0 text-[10px] font-black text-gray-400 w-10 text-center bg-[#1A1D24]">${startTimeDisp}</span>
+                            </div>
+                            <div class="task-boundary-end absolute border-t border-gray-800/40 pointer-events-none z-[-1]" style="top: ${App.mapMinsToPixels(duration)}px; left: -${leftOffset}px; width: 100vw;">
+                                <span class="task-boundary-label-end absolute -top-2 left-0 text-[10px] font-black text-gray-400 w-10 text-center bg-[#1A1D24]">${endTimeDisp}</span>
+                            </div>
                             <div onpointerdown="App.startTaskTimeDrag(event, '${ev.isSubtask ? 'subtask' : 'task'}', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})" class="draggable-card h-full bg-[#1A1D24] p-2.5 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} cursor-pointer hover:border-gray-700 transition-colors flex flex-col select-none shadow-lg overflow-hidden" onclick="App.openMenu(event, '${ev.isSubtask ? 'subtask' : 'task'}', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
                                 <div class="flex justify-between items-start mb-1 shrink-0">
                                     <div class="flex items-center gap-2">
@@ -1030,9 +1043,15 @@ const App = {
                             </div>
                         </div>`;
                     } else if (ev.type === 'slot') {
-                        let heightStr = `height: ${Math.max(ev.duration * 3, 40)}px;`;
+                        let heightStr = `height: ${Math.max(App.mapMinsToPixels(ev.duration), 70)}px;`;
                         timelineHtml += `
                         <div id="draggable-${ev.id}" class="absolute z-10 transition-transform" style="top: ${y}px; left: ${leftOffset}px; width: ${widthStr}; ${heightStr}">
+                            <div class="task-boundary-start absolute border-t border-gray-800/40 pointer-events-none z-[-1]" style="top: 0px; left: -${leftOffset}px; width: 100vw;">
+                                <span class="task-boundary-label-start absolute -top-2 left-0 text-[10px] font-black text-gray-400 w-10 text-center bg-[#1A1D24]">${ev.start}</span>
+                            </div>
+                            <div class="task-boundary-end absolute border-t border-gray-800/40 pointer-events-none z-[-1]" style="top: ${App.mapMinsToPixels(ev.duration)}px; left: -${leftOffset}px; width: 100vw;">
+                                <span class="task-boundary-label-end absolute -top-2 left-0 text-[10px] font-black text-gray-400 w-10 text-center bg-[#1A1D24]">${ev.end}</span>
+                            </div>
                             <div onpointerdown="App.startTaskTimeDrag(event, 'slot', '${ev.id}')" class="draggable-card h-full bg-indigo-500/10 p-2.5 rounded-2xl border border-indigo-500/30 flex flex-col select-none shadow-lg overflow-hidden">
                                 <div class="flex justify-between items-start mb-1 shrink-0">
                                     <span class="task-time-display text-[11px] font-black text-indigo-400">${ev.start} - ${ev.end}</span>
@@ -1584,11 +1603,11 @@ const App = {
                     if (!innerContainer) return;
                     let innerRect = innerContainer.getBoundingClientRect();
                     
-                    let pointerYInContainer = App.timeDragState.lastClientY - innerRect.top;
-                    let visibleHours = App.getVisibleHours(); // Ce sera toutes les heures
+                    let pointerYInContainer = App.timeDragState.lastClientY - innerRect.top - App.timeDragState.grabOffsetY;
+                    let activeIntervals = App.getActiveIntervals(); // Ce sera toutes les heures
                     
-                    let newMinutes = App.getMinutesFromY(pointerYInContainer, visibleHours);
-                    newMinutes = Math.round(newMinutes / 5) * 5; // snap 5 min
+                    let rawMinutes = App.getMinutesFromY(pointerYInContainer, activeIntervals);
+                    let newMinutes = Math.round(rawMinutes / 5) * 5; // snap 5 min
                     
                     const newH = Math.floor(newMinutes / 60);
                     const newM = newMinutes % 60;
@@ -1603,11 +1622,18 @@ const App = {
                         const endStr = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
                         App.timeDragState.timeDisplay.textContent = `${timeStr} - ${endStr}`;
                         App.timeDragState.timeDisplay.classList.add('text-red-400');
+                        
+                        if (App.timeDragState.wrapper) {
+                            let labelStart = App.timeDragState.wrapper.querySelector('.task-boundary-label-start');
+                            let labelEnd = App.timeDragState.wrapper.querySelector('.task-boundary-label-end');
+                            if (labelStart) { labelStart.textContent = timeStr; labelStart.classList.add('text-cyan-400'); }
+                            if (labelEnd) { labelEnd.textContent = endStr; labelEnd.classList.add('text-cyan-400'); }
+                        }
                     }
                     
-                    if (App.timeDragState.card) {
-                        let y = App.getTimeOffset(newMinutes, visibleHours);
-                        App.timeDragState.card.style.top = `${y}px`;
+                    if (App.timeDragState.wrapper) {
+                        let rawY = App.getTimeOffset(rawMinutes, activeIntervals);
+                        App.timeDragState.wrapper.style.top = `${rawY}px`;
                     }
                 };
 

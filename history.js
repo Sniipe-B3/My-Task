@@ -3,9 +3,14 @@
 // ==========================================
 export const RELEASE_HISTORY = [
     {
+        version: "1.8.1.2",
+        title: "Fluidité et Proportions",
+        notes: "• 🧈 <b>Glisser-déposer 1:1 :</b> Suivi parfait du doigt au pixel près et actualisation des heures en direct.<br>• 📉 <b>Échelle intelligente :</b> Hauteur minimale garantie pour les petites tâches, et compression visuelle des blocs très longs (ex: 5h)."
+    },
+    {
         version: "1.8.1.1",
         title: "Stabilité du Calendrier (Smartphone)",
-        notes: "• 📱 <b>Fix Smartphone :</b> Correction du glisser-déposer qui s'annulait tout seul sur mobile.<br>• 📐 <b>Échelle agrandie :</b> Le calendrier a été étiré pour rendre les tâches courtes plus lisibles.<br>• 🎯 <b>Épuration :</b> Affichage exclusif de l'heure actuelle et des heures de vos tâches (fin des heures fixes)."
+        notes: "• 📱 <b>Fix Smartphone :</b> Fin des annulations inopinées du Drag & Drop ! Maintenir une tâche du bout du doigt la préserve désormais sans que le navigateur ne relâche l'action.<br>• 📐 <b>Échelle Agrandie :</b> Pour plus de lisibilité sur mobile, l'échelle du temps a été triplée, permettant aux tâches très courtes d'avoir toujours la place d'afficher leur texte.<br>• 🎯 <b>Épuration Absolue :</b> Suppression totale des heures fixes."
     },
     {
         version: "1.8.1",
