@@ -958,8 +958,8 @@ const App = {
         timelineHtml += `</div>`;
 
         return `
-        <div class="space-y-4">
-            <div class="px-1 flex justify-between items-center">
+        <div class="flex flex-col flex-1 pb-2 min-h-0">
+            <div class="px-1 flex justify-between items-center shrink-0 mb-4">
                 <h2 class="text-xl font-black text-white flex items-center gap-2">
                     <i data-lucide="calendar-days" class="text-cyan-400"></i>
                     <button onclick="App.toggleCalendarView()" class="ml-1 text-gray-400 hover:text-cyan-400 bg-[#1A1D24] p-1.5 rounded-xl border border-gray-800 transition-colors shadow-sm"><i data-lucide="${AppState.isCalendarExpanded ? 'chevron-up' : 'chevron-down'}" class="w-4 h-4"></i></button>
@@ -970,9 +970,11 @@ const App = {
                     <button onclick="App.openAvailabilityModal()" class="px-2.5 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-xs font-bold shrink-0">+ Créneau libre</button>
                 </div>
             </div>
-            ${datesHtml}
-            <div class="bg-[#1A1D24] p-4 rounded-3xl border border-gray-800 shadow-xl min-h-[50vh]">
-                <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 border-b border-gray-800 pb-2">Timeline</h3>
+            <div class="shrink-0 mb-4">
+                ${datesHtml}
+            </div>
+            <div class="bg-[#1A1D24] rounded-3xl border border-gray-800 shadow-xl flex-1 overflow-y-auto no-scrollbar relative px-4 pb-4">
+                <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 border-b border-gray-800 pb-2 pt-4 sticky top-0 bg-[#1A1D24] z-40">Timeline</h3>
                 ${timelineHtml}
             </div>
         </div>`;
@@ -1136,7 +1138,7 @@ const App = {
         }
 
         if (!document.querySelector('nav')) {
-            document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 py-4 flex justify-around items-center z-20 pb-8"><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[9px] font-bold tracking-wider uppercase">Base</span></button><button onclick="App.setTab('calendar')" id="nav-calendar" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="calendar"></i><span class="text-[9px] font-bold tracking-wider uppercase">Calendrier</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[9px] font-bold tracking-wider uppercase">Paramètres</span></button></nav>`);
+            document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 pt-2 pb-1 flex justify-around items-center z-20"><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[9px] font-bold tracking-wider uppercase">Base</span></button><button onclick="App.setTab('calendar')" id="nav-calendar" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="calendar"></i><span class="text-[9px] font-bold tracking-wider uppercase">Calendrier</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[9px] font-bold tracking-wider uppercase">Paramètres</span></button></nav>`);
         }
 
         if (AppState.activeTab === 'calendar') content.innerHTML = this.renderCalendar();
