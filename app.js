@@ -82,6 +82,46 @@ const AppState = {
 // 4. MOTEUR DE L'APPLICATION
 // ==========================================
 const App = {
+    isTaskScheduledOnDate(task, targetDateStr) {
+        if (!task.scheduledDate) return false;
+        
+        if (task.scheduledDate === targetDateStr) return true;
+        
+        const rec = task.recurrence;
+        if (!rec || rec.type === 'once') return false;
+        
+        if (targetDateStr < task.scheduledDate) return false;
+        
+        if (rec.endType === 'date' && rec.endDate && targetDateStr > rec.endDate) return false;
+        
+        const [tY, tM, tD] = targetDateStr.split('-').map(Number);
+        const targetDate = new Date(tY, tM - 1, tD);
+        
+        const [sY, sM, sD] = task.scheduledDate.split('-').map(Number);
+        const startDate = new Date(sY, sM - 1, sD);
+        
+        if (rec.type === 'daily') {
+            const interval = rec.dailyInterval || 1;
+            const diffTime = Math.abs(targetDate - startDate);
+            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+            return diffDays % interval === 0;
+        }
+        
+        if (rec.type === 'weekly') {
+            const days = rec.weeklyDays || [];
+            if (days.length === 0) return false;
+            return days.includes(targetDate.getDay());
+        }
+        
+        if (rec.type === 'monthly') {
+            const days = rec.monthlyDays || [];
+            if (days.length === 0) return false;
+            return days.includes(tD);
+        }
+        
+        return false;
+    },
+
     timeDragState: null,
     
     startTaskTimeDrag(e, type, id, parentId = null) {
@@ -98,7 +138,7 @@ const App = {
             item = type === 'subtask' ? task.subtasks.find(s => s.id === id) : task;
         }
         
-        if (!item || (type !== 'slot' && item.status === 'done')) return; 
+        if (!item || (type !== 'slot' && this.getTaskStatus(item, AppState.selectedDate) === 'done')) return; 
         
         let timeStr = type === 'slot' ? item.start : (item.scheduledTime || '23:59');
         const [h, m] = timeStr.split(':').map(Number);
@@ -165,11 +205,17 @@ const App = {
         let hasChanges = false;
 
         // Fonction utilitaire pour savoir si une tâche est en retard de plus de 24h APRES la fin de sa durée prévue
-        const isTaskExpired = (dateStr, timeStr, duration) => {
-            if (!dateStr) return false;
-            const [y, m, d] = dateStr.split('-').map(Number);
-            const [h, min] = timeStr ? timeStr.split(':').map(Number) : [23, 59];
-            const taskDuration = duration || 15;
+        const isTaskExpired = (task) => {
+            if (!task.scheduledDate) return false;
+            
+            // Les tâches récurrentes non terminées ne sont jamais "en retard de 24h et à remettre dans la base"
+            // car elles sont calculées à la volée pour les jours futurs.
+            // (Si on veut gérer le retard spécifique des occurrences passées, il faudrait une logique plus complexe d'historique des statuts)
+            if (task.recurrence && task.recurrence.type !== 'once') return false;
+            
+            const [y, m, d] = task.scheduledDate.split('-').map(Number);
+            const [h, min] = task.scheduledTime ? task.scheduledTime.split(':').map(Number) : [23, 59];
+            const taskDuration = task.duration || 15;
             
             // On recrée la date exacte de fin prévue
             const endDate = new Date(y, m - 1, d, h, min + taskDuration);
@@ -180,14 +226,14 @@ const App = {
         };
 
         AppState.tasks = AppState.tasks.map(t => {
-            if (t.status !== 'done' && isTaskExpired(t.scheduledDate, t.scheduledTime, t.duration)) {
+            if (t.status !== 'done' && isTaskExpired(t)) {
                 missed.push(t);
                 // On ne modifie plus la tâche silencieusement ici, on attend le choix de l'utilisateur !
             }
             
             if (t.subtasks && t.subtasks.length > 0) {
                 t.subtasks.forEach(s => {
-                    if (s.status !== 'done' && isTaskExpired(s.scheduledDate, s.scheduledTime, s.duration)) {
+                    if (s.status !== 'done' && isTaskExpired(s)) {
                         missed.push({...s, parentName: t.name, parentId: t.id});
                     }
                 });
@@ -375,14 +421,14 @@ const App = {
 
         AppState.taskModal = { 
             id: Date.now().toString(), parentId: null, isNew: true,
-            data: { name: '', projectId: projectId, duration: 15, locations: [], priority: 'Moyenne', note: '', scheduledDate: defDate, scheduledTime: defTime } 
+            data: { name: '', projectId: projectId, duration: 15, locations: [], priority: 'Moyenne', note: '', scheduledDate: defDate, scheduledTime: defTime, recurrence: null } 
         };
         this.render();
     },
     openNewSubtaskModal(parentId) {
         AppState.taskModal = { 
             id: Date.now().toString(), parentId: parentId, isNew: true,
-            data: { name: '', duration: 15, locations: [], priority: 'Moyenne', note: '', scheduledDate: null, scheduledTime: '' } 
+            data: { name: '', duration: 15, locations: [], priority: 'Moyenne', note: '', scheduledDate: null, scheduledTime: '', recurrence: null } 
         };
         this.render();
     },
@@ -424,18 +470,40 @@ const App = {
         const scheduledDate = document.getElementById('modal-task-date').value || null;
         const scheduledTime = document.getElementById('modal-task-time').value || null;
 
+        const typeBtn = form.querySelector('.recurrence-type-selected');
+        const recurrenceType = typeBtn ? typeBtn.getAttribute('data-value') : 'once';
+        
+        let recurrence = null;
+        if (recurrenceType !== 'once') {
+            recurrence = { type: recurrenceType };
+            const endBtn = form.querySelector('.recurrence-end-selected');
+            recurrence.endType = endBtn ? endBtn.getAttribute('data-value') : 'never';
+            if (recurrence.endType === 'date') {
+                recurrence.endDate = document.getElementById('modal-task-recurrence-end-date').value || null;
+            }
+            
+            if (recurrenceType === 'daily') {
+                let interval = parseInt(document.getElementById('modal-task-recurrence-daily-interval').value);
+                recurrence.dailyInterval = (isNaN(interval) || interval < 1) ? 1 : interval;
+            } else if (recurrenceType === 'weekly') {
+                recurrence.weeklyDays = Array.from(form.querySelectorAll('#recurrence-weekly-sec .recurrence-day-selected')).map(b => parseInt(b.getAttribute('data-day')));
+            } else if (recurrenceType === 'monthly') {
+                recurrence.monthlyDays = Array.from(form.querySelectorAll('#recurrence-monthly-sec .recurrence-day-selected')).map(b => parseInt(b.getAttribute('data-day')));
+            }
+        }
+
         if (parentId) { 
             AppState.tasks = AppState.tasks.map(t => {
                 if (t.id === parentId) {
-                    if (isNew) return { ...t, subtasks: [...(t.subtasks || []), { id, name, duration, locations, priority, note, scheduledDate, scheduledTime, status: 'todo' }] };
-                    else return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, locations, priority, note, scheduledDate, scheduledTime } : s) };
+                    if (isNew) return { ...t, subtasks: [...(t.subtasks || []), { id, name, duration, locations, priority, note, scheduledDate, scheduledTime, recurrence, status: 'todo' }] };
+                    else return { ...t, subtasks: t.subtasks.map(s => s.id === id ? { ...s, name, duration, locations, priority, note, scheduledDate, scheduledTime, recurrence } : s) };
                 }
                 return t;
             });
         } else { 
             const projectId = document.getElementById('modal-task-project').value || null;
-            if (isNew) AppState.tasks.unshift({ id, name, projectId, duration, locations, priority, note, scheduledDate, scheduledTime, status: 'todo', subtasks: [] });
-            else AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, locations, priority, note, scheduledDate, scheduledTime } : t);
+            if (isNew) AppState.tasks.unshift({ id, name, projectId, duration, locations, priority, note, scheduledDate, scheduledTime, recurrence, status: 'todo', subtasks: [] });
+            else AppState.tasks = AppState.tasks.map(t => t.id === id ? { ...t, name, projectId, duration, locations, priority, note, scheduledDate, scheduledTime, recurrence } : t);
         }
         AppState.taskModal = null; this.save();
     },
@@ -542,13 +610,98 @@ const App = {
         btn.className = `flex-1 py-2 min-w-[60px] rounded-xl text-xs font-bold border transition-colors ${className} ${colors}`;
     },
     selectModalPriority(btn) { this.applyPriorityStyle(btn, 'modal-priority-selected'); },
+
+    selectRecurrenceType(btn, type) {
+        btn.parentElement.querySelectorAll('button').forEach(b => { 
+            b.classList.remove('bg-cyan-500/20', 'text-cyan-400', 'border-cyan-500/50', 'recurrence-type-selected');
+            b.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
+        });
+        btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
+        btn.classList.add('bg-cyan-500/20', 'text-cyan-400', 'border-cyan-500/50', 'recurrence-type-selected');
+        btn.setAttribute('data-value', type);
+        
+        document.getElementById('recurrence-daily-sec').style.display = type === 'daily' ? 'block' : 'none';
+        document.getElementById('recurrence-weekly-sec').style.display = type === 'weekly' ? 'block' : 'none';
+        document.getElementById('recurrence-monthly-sec').style.display = type === 'monthly' ? 'block' : 'none';
+        document.getElementById('recurrence-end-sec').style.display = type !== 'once' ? 'block' : 'none';
+    },
+
+    toggleRecurrenceDay(btn) {
+        btn.classList.toggle('recurrence-day-selected');
+        if (btn.classList.contains('recurrence-day-selected')) {
+            btn.classList.replace('bg-[#0D0F12]', 'bg-cyan-500/20');
+            btn.classList.replace('text-gray-500', 'text-cyan-400');
+            btn.classList.replace('border-transparent', 'border-cyan-500/50');
+        } else {
+            btn.classList.replace('bg-cyan-500/20', 'bg-[#0D0F12]');
+            btn.classList.replace('text-cyan-400', 'text-gray-500');
+            btn.classList.replace('border-cyan-500/50', 'border-transparent');
+        }
+    },
+
+    selectRecurrenceEnd(btn, type) {
+        btn.parentElement.querySelectorAll('button').forEach(b => { 
+            b.classList.remove('bg-cyan-500/20', 'text-cyan-400', 'border-cyan-500/50', 'recurrence-end-selected');
+            b.classList.add('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
+        });
+        btn.classList.remove('bg-[#0D0F12]', 'text-gray-500', 'border-transparent');
+        btn.classList.add('bg-cyan-500/20', 'text-cyan-400', 'border-cyan-500/50', 'recurrence-end-selected');
+        btn.setAttribute('data-value', type);
+        
+        document.getElementById('recurrence-end-date-sec').style.display = type === 'date' ? 'block' : 'none';
+    },
     
-    // --- ACTIONS TÂCHES ---
-    toggleTask(taskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,status:t.status==='todo'?'done':'todo'} : t); this.save(); },
-    toggleSubtask(taskId,subtaskId){ AppState.tasks=AppState.tasks.map(t=>t.id===taskId ? {...t,subtasks:t.subtasks.map(s=>s.id===subtaskId ? {...s,status:s.status==='todo'?'done':'todo'} : s)} : t); this.save(); },
+    getTaskStatus(task, dateStr) {
+        if (task.recurrence && task.recurrence.type !== 'once') {
+            return (task.completedDates && task.completedDates.includes(dateStr)) ? 'done' : 'todo';
+        }
+        return task.status;
+    },
+
+    toggleTask(taskId, targetDate) { 
+        targetDate = targetDate || AppState.selectedDate;
+        AppState.tasks = AppState.tasks.map(t => {
+            if (t.id === taskId) {
+                if (t.recurrence && t.recurrence.type !== 'once') {
+                    let cd = t.completedDates || [];
+                    if (cd.includes(targetDate)) cd = cd.filter(d => d !== targetDate);
+                    else cd.push(targetDate);
+                    return { ...t, completedDates: cd };
+                } else {
+                    return { ...t, status: t.status === 'todo' ? 'done' : 'todo' };
+                }
+            }
+            return t;
+        }); 
+        this.save(); 
+    },
+    
+    toggleSubtask(taskId, subtaskId, targetDate) { 
+        targetDate = targetDate || AppState.selectedDate;
+        AppState.tasks = AppState.tasks.map(t => {
+            if (t.id === taskId) {
+                return { ...t, subtasks: t.subtasks.map(s => {
+                    if (s.id === subtaskId) {
+                        if (s.recurrence && s.recurrence.type !== 'once') {
+                            let cd = s.completedDates || [];
+                            if (cd.includes(targetDate)) cd = cd.filter(d => d !== targetDate);
+                            else cd.push(targetDate);
+                            return { ...s, completedDates: cd };
+                        } else {
+                            return { ...s, status: s.status === 'todo' ? 'done' : 'todo' };
+                        }
+                    }
+                    return s;
+                })};
+            }
+            return t;
+        }); 
+        this.save(); 
+    },
+
     addProjectTask(projectId){
         const input = document.getElementById(`project-quick-task-${projectId}`); if(!input || !input.value.trim()) return;
-        AppState.tasks.unshift({id:Date.now().toString(), name:input.value, projectId:projectId, duration:15, locations:[], priority:'Moyenne', status:'todo', subtasks:[], note:'', scheduledDate: null, scheduledTime: null});
+        AppState.tasks.unshift({id:Date.now().toString(), name:input.value, projectId:projectId, duration:15, locations:[], priority:'Moyenne', status:'todo', subtasks:[], note:'', scheduledDate: null, scheduledTime: null, recurrence: null});
         AppState.showProjectAddTaskModal = null; this.save();
     },
     
@@ -558,13 +711,13 @@ const App = {
             let hasActiveSubtasks = false;
             if (t.subtasks && t.subtasks.length > 0) {
                 t.subtasks.forEach(s => {
-                    if (s.status !== 'done') {
+                    if (this.getTaskStatus(s, AppState.selectedDate) !== 'done') {
                         hasActiveSubtasks = true;
                         allActive.push({...s, isSubtask: true, parentId: t.id, parentName: t.name, projectId: t.projectId, originalTask: t});
                     }
                 });
             }
-            if (!hasActiveSubtasks && t.status !== 'done') allActive.push({...t, isSubtask: false, projectId: t.projectId});
+            if (!hasActiveSubtasks && this.getTaskStatus(t, AppState.selectedDate) !== 'done') allActive.push({...t, isSubtask: false, projectId: t.projectId});
         });
         return allActive;
     },
@@ -713,7 +866,7 @@ const App = {
     },
 
     renderTask(task, minimal=false, parentId=null, parentName=null){
-        const isDone = task.status === 'done'; const isSubtask = parentId !== null;
+        const isDone = this.getTaskStatus(task, AppState.selectedDate) === 'done'; const isSubtask = parentId !== null;
         const argParent = isSubtask ? `, '${parentId}'` : '';
         const priorityColors = {'Urgence':'text-red-400 bg-red-500/10 border-red-500/30', 'Haute':'text-purple-400 bg-purple-500/10 border-purple-500/30','Moyenne':'text-amber-400 bg-amber-500/10 border-amber-500/30','Basse':'text-blue-400 bg-blue-500/10 border-blue-500/30'};
         const hasLocations = task.locations && task.locations.length > 0;
@@ -749,7 +902,7 @@ const App = {
             intervals.push({ start: Math.max(0, m - 15), end: Math.min(24*60, m + 15) }); 
         }
         
-        let events = [...AppState.tasks.filter(t => t.scheduledDate === AppState.selectedDate),
+        let events = [...AppState.tasks.filter(t => this.isTaskScheduledOnDate(t, AppState.selectedDate)),
                       ...AppState.availabilities.filter(a => a.date === AppState.selectedDate)];
                       
         events.forEach(ev => {
@@ -866,12 +1019,12 @@ const App = {
         let dayEvents = [];
         
         AppState.tasks.forEach(t => {
-            if (t.scheduledDate === AppState.selectedDate) {
+            if (this.isTaskScheduledOnDate(t, AppState.selectedDate)) {
                 dayEvents.push({ ...t, type: 'task', isSubtask: false, parentName: null });
             }
             if (t.subtasks) {
                 t.subtasks.forEach(s => {
-                    if (s.scheduledDate === AppState.selectedDate) {
+                    if (this.isTaskScheduledOnDate(s, AppState.selectedDate)) {
                         dayEvents.push({ ...s, type: 'task', isSubtask: true, parentId: t.id, parentName: t.name, projectId: t.projectId });
                     }
                 });
@@ -921,14 +1074,14 @@ const App = {
             datesHtml = `<div class="flex gap-2 overflow-x-auto pb-4 no-scrollbar" id="calendar-date-picker">`;
             dates.forEach(d => {
                 const isSelected = d.date === AppState.selectedDate;
-                const hasEvents = AppState.tasks.some(t => t.scheduledDate === d.date || (t.subtasks && t.subtasks.some(s => s.scheduledDate === d.date))) || AppState.availabilities.some(a => a.date === d.date);
+                const hasEvents = AppState.tasks.some(t => this.isTaskScheduledOnDate(t, d.date) || (t.subtasks && t.subtasks.some(s => this.isTaskScheduledOnDate(s, d.date)))) || AppState.availabilities.some(a => a.date === d.date);
 
                 datesHtml += `
-                <div ${isSelected ? 'id="selected-calendar-date"' : ''} onclick="App.selectDate('${d.date}')" class="relative flex flex-col items-center justify-center min-w-[55px] p-2 rounded-2xl cursor-pointer transition-all border ${isSelected ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]' : d.isToday ? 'bg-[#1A1D24] border-gray-600' : 'bg-[#0D0F12] border-gray-800 hover:border-gray-700'}">
-                    <span class="text-[10px] font-bold uppercase ${isSelected ? 'text-black' : d.isToday ? 'text-cyan-400' : 'text-gray-500'}">${d.label}</span>
-                    <span class="text-lg font-black ${isSelected ? 'text-black' : 'text-white'}">${d.num}</span>
-                    <span class="text-[9px] font-bold uppercase ${isSelected ? 'text-black' : 'text-gray-500'}">${d.month}</span>
-                    ${hasEvents ? `<div class="absolute bottom-1 w-1 h-1 rounded-full ${isSelected ? 'bg-black/50' : 'bg-cyan-400'}"></div>` : ''}
+                <div ${isSelected ? 'id="selected-calendar-date"' : ''} onclick="App.selectDate('${d.date}')" class="relative flex flex-col items-center justify-center min-w-[44px] p-1.5 rounded-[12px] cursor-pointer transition-all border ${isSelected ? 'bg-cyan-500 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]' : d.isToday ? 'bg-[#1A1D24] border-gray-600' : 'bg-[#0D0F12] border-gray-800 hover:border-gray-700'}">
+                    <span class="text-[8px] leading-tight font-bold uppercase ${isSelected ? 'text-black' : d.isToday ? 'text-cyan-400' : 'text-gray-500'}">${d.label}</span>
+                    <span class="text-[14px] leading-tight font-black ${isSelected ? 'text-black' : 'text-white'}">${d.num}</span>
+                    <span class="text-[7px] leading-tight font-bold uppercase ${isSelected ? 'text-black' : 'text-gray-500'}">${d.month}</span>
+                    ${hasEvents ? `<div class="absolute bottom-0.5 w-[3px] h-[3px] rounded-full ${isSelected ? 'bg-black/50' : 'bg-cyan-400'}"></div>` : ''}
                 </div>`;
             });
             datesHtml += `</div>`;
@@ -958,7 +1111,7 @@ const App = {
                 const isSelected = dStr === AppState.selectedDate;
                 const isToday = dStr === getTodayString();
                 
-                const hasEvents = AppState.tasks.some(t => t.scheduledDate === dStr || (t.subtasks && t.subtasks.some(s => s.scheduledDate === dStr))) || AppState.availabilities.some(a => a.date === dStr);
+                const hasEvents = AppState.tasks.some(t => this.isTaskScheduledOnDate(t, dStr) || (t.subtasks && t.subtasks.some(s => this.isTaskScheduledOnDate(s, dStr)))) || AppState.availabilities.some(a => a.date === dStr);
                 
                 datesHtml += `
                 <div onclick="App.selectDate('${dStr}')" class="flex flex-col items-center justify-center p-2 rounded-xl cursor-pointer transition-all border ${isSelected ? 'bg-cyan-500 border-cyan-400 text-black shadow-[0_0_10px_rgba(6,182,212,0.4)]' : isToday ? 'bg-[#2a2f3a] border-gray-500 text-cyan-400' : 'bg-[#0D0F12] border-gray-800 text-white hover:border-gray-700 hover:bg-[#1f232b]'}">
@@ -1037,7 +1190,7 @@ const App = {
                         let duration = ev.duration || 15;
                         let heightStr = `height: ${Math.max(App.mapMinsToPixels(duration), 90)}px;`;
                         
-                        const isDone = ev.status === 'done';
+                        const isDone = this.getTaskStatus(ev, AppState.selectedDate) === 'done';
                         const startTimeDisp = ev.scheduledTime || '--:--';
                         let endTimeDisp = '--:--';
                         if (ev.scheduledTime) {
@@ -1114,8 +1267,8 @@ const App = {
             <div class="px-1 flex justify-between items-center shrink-0 mb-4">
                 <h2 class="text-xl font-black text-white flex items-center gap-2">
                     <i data-lucide="calendar-days" class="text-cyan-400"></i>
-                    <button onclick="App.toggleCalendarView()" class="ml-1 text-gray-400 hover:text-cyan-400 bg-[#1A1D24] p-1.5 rounded-xl border border-gray-800 transition-colors shadow-sm"><i data-lucide="${AppState.isCalendarExpanded ? 'chevron-up' : 'chevron-down'}" class="w-4 h-4"></i></button>
-                    <button onclick="App.goToToday()" class="ml-1 text-[9px] font-bold uppercase tracking-wider text-gray-400 hover:text-cyan-400 bg-[#1A1D24] px-2 py-1.5 rounded-xl border border-gray-800 transition-colors shadow-sm">Aujourd'hui</button>
+                    <button onclick="App.toggleCalendarView()" class="ml-1 flex items-center justify-center w-7 h-7 text-gray-400 hover:text-cyan-400 bg-[#1A1D24] rounded-xl border border-gray-800 transition-colors shadow-sm"><i data-lucide="${AppState.isCalendarExpanded ? 'chevron-up' : 'chevron-down'}" class="w-4 h-4"></i></button>
+                    <button onclick="App.goToToday()" class="ml-1 flex items-center h-7 px-2 text-[9px] leading-none font-bold uppercase tracking-wider text-gray-400 hover:text-cyan-400 bg-[#1A1D24] rounded-xl border border-gray-800 transition-colors shadow-sm">Aujourd'hui</button>
                 </h2>
                 <div class="flex gap-1.5">
                     <button onclick="App.openNewTaskModal()" class="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-bold shrink-0">+ Tâche</button>
@@ -1135,7 +1288,16 @@ const App = {
     renderProjectItem(project) {
         const projectTasks = AppState.tasks.filter(t => t.projectId === project.id);
         let total=0, comp=0; 
-        projectTasks.forEach(t=>{ total++; if(t.status==='done')comp++; if(t.subtasks){t.subtasks.forEach(s=>{total++;if(s.status==='done')comp++})} });
+        projectTasks.forEach(t=>{ 
+            total++; 
+            if(App.getTaskStatus(t, AppState.selectedDate) === 'done') comp++; 
+            if(t.subtasks){
+                t.subtasks.forEach(s=>{
+                    total++;
+                    if(App.getTaskStatus(s, AppState.selectedDate) === 'done') comp++;
+                });
+            } 
+        });
         const prog=total===0?0:Math.round((comp/total)*100); 
         const exp = AppState.expandedProjectId === project.id;
         
@@ -1290,7 +1452,7 @@ const App = {
         }
 
         if (!document.querySelector('nav')) {
-            document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 pt-2 pb-1 flex justify-around items-center z-20"><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="folder"></i><span class="text-[9px] font-bold tracking-wider uppercase">Base</span></button><button onclick="App.setTab('calendar')" id="nav-calendar" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="calendar"></i><span class="text-[9px] font-bold tracking-wider uppercase">Calendrier</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-1 transition-all text-gray-500"><i data-lucide="settings"></i><span class="text-[9px] font-bold tracking-wider uppercase">Paramètres</span></button></nav>`);
+            document.getElementById('app-container').insertAdjacentHTML('beforeend', `<nav class="fixed bottom-0 w-full bg-[#13161c]/90 backdrop-blur-md border-t border-gray-800 px-2 pt-2 pb-1 flex justify-around items-center z-20"><button onclick="App.setTab('projects')" id="nav-projects" class="flex flex-col items-center gap-0.5 transition-all text-gray-500"><i data-lucide="folder" class="w-[18px] h-[18px]"></i><span class="text-[7px] font-bold tracking-wider uppercase">Base</span></button><button onclick="App.setTab('calendar')" id="nav-calendar" class="flex flex-col items-center gap-0.5 transition-all text-gray-500"><i data-lucide="calendar" class="w-[18px] h-[18px]"></i><span class="text-[7px] font-bold tracking-wider uppercase">Calendrier</span></button><button onclick="App.setTab('settings')" id="nav-settings" class="flex flex-col items-center gap-0.5 transition-all text-gray-500"><i data-lucide="settings" class="w-[18px] h-[18px]"></i><span class="text-[7px] font-bold tracking-wider uppercase">Paramètres</span></button></nav>`);
         }
 
         if (AppState.activeTab === 'calendar') content.innerHTML = this.renderCalendar();
@@ -1433,6 +1595,64 @@ const App = {
                                 </div>
                             </div>
 
+                            <div class="p-3 border border-gray-800 rounded-xl bg-[#0D0F12]">
+                                <label class="text-[10px] text-cyan-400 uppercase font-bold flex items-center gap-1 mb-2"><i data-lucide="repeat" class="w-3 h-3"></i> Récurrence</label>
+                                
+                                <div class="flex gap-2 flex-wrap mb-3">
+                                    ${[
+                                        {v: 'once', l: 'Une fois'}, 
+                                        {v: 'daily', l: 'Tous les jours'}, 
+                                        {v: 'weekly', l: 'Hebdomadaire'}, 
+                                        {v: 'monthly', l: 'Mensuel'}
+                                    ].map(t => {
+                                        const isSelected = (d.recurrence?.type || 'once') === t.v;
+                                        return `<button type="button" onclick="App.selectRecurrenceType(this, '${t.v}')" data-value="${t.v}" class="flex-1 py-1.5 min-w-[70px] rounded-lg text-xs font-bold transition-colors ${isSelected ? 'recurrence-type-selected bg-cyan-500/20 text-cyan-400 border border-cyan-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${t.l}</button>`;
+                                    }).join('')}
+                                </div>
+
+                                <div id="recurrence-daily-sec" class="mb-3" style="display: ${(d.recurrence?.type === 'daily') ? 'block' : 'none'}">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs text-gray-400">Tous les</span>
+                                        <input type="number" id="modal-task-recurrence-daily-interval" value="${d.recurrence?.dailyInterval || 1}" min="1" class="w-16 bg-transparent text-sm text-white focus:outline-none border border-gray-800 rounded-lg px-2 py-1 text-center">
+                                        <span class="text-xs text-gray-400">jours</span>
+                                    </div>
+                                </div>
+
+                                <div id="recurrence-weekly-sec" class="mb-3" style="display: ${(d.recurrence?.type === 'weekly') ? 'block' : 'none'}">
+                                    <div class="flex gap-1 flex-wrap justify-center">
+                                        ${[ {d:1,l:'L'},{d:2,l:'Ma'},{d:3,l:'Me'},{d:4,l:'J'},{d:5,l:'V'},{d:6,l:'S'},{d:0,l:'D'} ].map(day => {
+                                            const isSelected = (d.recurrence?.weeklyDays || []).includes(day.d);
+                                            return `<button type="button" onclick="App.toggleRecurrenceDay(this)" data-day="${day.d}" class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${isSelected ? 'recurrence-day-selected bg-cyan-500/20 text-cyan-400 border border-cyan-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${day.l}</button>`;
+                                        }).join('')}
+                                    </div>
+                                </div>
+
+                                <div id="recurrence-monthly-sec" class="mb-3" style="display: ${(d.recurrence?.type === 'monthly') ? 'block' : 'none'}">
+                                    <div class="flex gap-1 flex-wrap justify-center">
+                                        ${Array.from({length: 31}, (_, i) => i + 1).map(day => {
+                                            const isSelected = (d.recurrence?.monthlyDays || []).includes(day);
+                                            return `<button type="button" onclick="App.toggleRecurrenceDay(this)" data-day="${day}" class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${isSelected ? 'recurrence-day-selected bg-cyan-500/20 text-cyan-400 border border-cyan-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${day}</button>`;
+                                        }).join('')}
+                                    </div>
+                                </div>
+
+                                <div id="recurrence-end-sec" style="display: ${(d.recurrence?.type && d.recurrence.type !== 'once') ? 'block' : 'none'}">
+                                    <label class="text-[10px] text-gray-500 uppercase font-bold mb-1 block">Se termine</label>
+                                    <div class="flex gap-2 flex-wrap mb-2">
+                                        ${[
+                                            {v: 'never', l: 'Jamais'}, 
+                                            {v: 'date', l: 'Le...'}
+                                        ].map(t => {
+                                            const isSelected = (d.recurrence?.endType || 'never') === t.v;
+                                            return `<button type="button" onclick="App.selectRecurrenceEnd(this, '${t.v}')" data-value="${t.v}" class="flex-1 py-1.5 min-w-[70px] rounded-lg text-xs font-bold transition-colors ${isSelected ? 'recurrence-end-selected bg-cyan-500/20 text-cyan-400 border border-cyan-500/50' : 'bg-[#0D0F12] text-gray-500 border border-transparent'}">${t.l}</button>`;
+                                        }).join('')}
+                                    </div>
+                                    <div id="recurrence-end-date-sec" style="display: ${(d.recurrence?.endType === 'date') ? 'block' : 'none'}">
+                                        <input type="${d.recurrence?.endDate ? 'date' : 'text'}" placeholder="Date de fin" onfocus="this.type='date'" onblur="if(!this.value) this.type='text'" id="modal-task-recurrence-end-date" value="${d.recurrence?.endDate || ''}" class="w-full bg-transparent text-sm text-white focus:outline-none border border-gray-800 rounded-lg px-3 py-2 placeholder-gray-600">
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- === DESCRIPTIF: NOUVEL INPUT DUREE LIBRE === -->
                             <div>
                                 <label class="text-[10px] text-gray-500 uppercase font-bold">Durée (minutes - max 10h)</label>
@@ -1528,7 +1748,7 @@ const App = {
         
         tabs.forEach(tab=>{
             const btn=document.getElementById('nav-'+tab.id);
-            if(btn) btn.className=`flex flex-col items-center gap-1 transition-all ${AppState.activeTab===tab.id?tab.color:'text-gray-500'}`;
+            if(btn) btn.className=`flex flex-col items-center gap-0.5 transition-all ${AppState.activeTab===tab.id?tab.color:'text-gray-500'}`;
         });
         
         lucide.createIcons();

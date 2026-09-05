@@ -3,6 +3,11 @@
 // ==========================================
 export const RELEASE_HISTORY = [
     {
+        version: "1.8.3",
+        title: "Récurrence & Design Affiné",
+        notes: "• 🔁 <b>Récurrence intelligente :</b> Support complet des tâches récurrentes ! Cochez une occurrence aujourd'hui, elle restera 'À faire' pour sa prochaine échéance sans polluer votre base.<br>• 🎨 <b>UI optimisée :</b> Éléments du calendrier et barre de navigation réduits de 20-25% pour un affichage plus aéré et minimaliste."
+    },
+    {
         version: "1.8.2",
         title: "Affichage Calendrier Empilé & Épuré",
         notes: "• 🥞 <b>Empilement Intelligent :</b> Fini les tâches qui se chevauchent illisiblement ou en colonnes ! Les tâches simultanées s'empilent désormais verticalement et prennent toute la largeur, triées par priorité puis par durée.<br>• ⏱️ <b>Heures Épurées :</b> Pour alléger visuellement le calendrier, seul le début et la fin d'un bloc de tâches empilées affichent leur heure. Les heures individuelles de chaque tâche réapparaissent temporairement lorsqu'on les déplace."
