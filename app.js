@@ -130,29 +130,46 @@ const App = {
                 App.timeDragState.active = true;
                 
                 if (navigator.vibrate) navigator.vibrate(50);
+
+                let oldWrapper = document.getElementById(`draggable-${App.timeDragState.id}`);
+                if (oldWrapper) {
+                    oldWrapper.id = "temp-drag-save";
+                    document.body.appendChild(oldWrapper);
+                }
                 
                 // Forcer le rendu avec tous les sauts de temps ouverts
                 App.render();
                 
-                requestAnimationFrame(() => {
-                    scrollArea = document.getElementById('timeline-scroll-area');
-                    let newVis = App.getVisibleHours(); // Devrait maintenant renvoyer 24h
-                    let newOffset = App.getTimeOffset(App.timeDragState.startMinutes, newVis);
-                    
-                    if (scrollArea) {
-                        let diff = newOffset - oldOffset;
-                        scrollArea.scrollTop = oldScrollTop + diff;
-                    }
+                scrollArea = document.getElementById('timeline-scroll-area');
+                let newVis = App.getVisibleHours(); // Devrait maintenant renvoyer 24h
+                let newOffset = App.getTimeOffset(App.timeDragState.startMinutes, newVis);
+                
+                if (scrollArea) {
+                    let diff = newOffset - oldOffset;
+                    scrollArea.scrollTop = oldScrollTop + diff;
+                }
 
-                    // Re-récupérer la carte fraîchement générée
+                let newWrapper = document.getElementById(`draggable-${App.timeDragState.id}`);
+                if (newWrapper && oldWrapper) {
+                    let container = newWrapper.parentNode;
+                    oldWrapper.id = `draggable-${App.timeDragState.id}`;
+                    oldWrapper.style.top = newWrapper.style.top;
+                    oldWrapper.style.left = newWrapper.style.left;
+                    oldWrapper.style.width = newWrapper.style.width;
+                    oldWrapper.style.height = newWrapper.style.height;
+                    container.insertBefore(oldWrapper, newWrapper);
+                    container.removeChild(newWrapper);
+                    App.timeDragState.card = oldWrapper;
+                } else {
                     App.timeDragState.card = document.getElementById(`draggable-${App.timeDragState.id}`);
-                    if (App.timeDragState.card) {
-                        App.timeDragState.timeDisplay = App.timeDragState.card.querySelector('.task-time-display');
-                        App.timeDragState.card.style.transform = 'scale(0.98)';
-                        App.timeDragState.card.style.transition = 'none';
-                        App.timeDragState.card.style.zIndex = '50';
-                    }
-                });
+                }
+
+                if (App.timeDragState.card) {
+                    App.timeDragState.timeDisplay = App.timeDragState.card.querySelector('.task-time-display');
+                    App.timeDragState.card.style.transform = 'scale(0.98)';
+                    App.timeDragState.card.style.transition = 'none';
+                    App.timeDragState.card.style.zIndex = '50';
+                }
             }
         }, 400);
     },

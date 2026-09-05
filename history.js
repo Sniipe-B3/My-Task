@@ -3,6 +3,11 @@
 // ==========================================
 export const RELEASE_HISTORY = [
     {
+        version: "1.8.1.1",
+        title: "Stabilité du Calendrier (Smartphone)",
+        notes: "• 📱 <b>Fix Smartphone :</b> Correction du glisser-déposer qui s'annulait tout seul sur mobile.<br>• 📐 <b>Échelle agrandie :</b> Le calendrier a été étiré pour rendre les tâches courtes plus lisibles.<br>• 🎯 <b>Épuration :</b> Affichage exclusif de l'heure actuelle et des heures de vos tâches (fin des heures fixes)."
+    },
+    {
         version: "1.8.1",
         title: "Smart Timeline & Drag&Drop 2.0",
         notes: "• ⏳ <b>Smart Timeline :</b> Grille 100% dynamique (masquage des heures vides), sauts de temps discrets et nouvelle échelle très aérée.<br>• 📏 <b>Tâches Absolues :</b> Taille strictement proportionnelle mathématiquement, hauteur minimale de sécurité et décalage intelligent anti-chevauchement.<br>• 🤏 <b>Drag & Drop 2.0 :</b> Appui long n'importe où, déploiement 24h dynamique, auto-scroll fluide et accroche magnétique (5 min).<br>• 📱 <b>Interface :</b> Espace maximisé, centrage auto de la date du jour, renommage en \"Base\", accès direct \"+ Tâche\" et suggestion d'heure arrondie."
