@@ -3,6 +3,11 @@
 // ==========================================
 export const RELEASE_HISTORY = [
     {
+        version: "1.8.1",
+        title: "Smart Timeline & Drag&Drop 2.0",
+        notes: "• ⏳ <b>Smart Timeline :</b> Grille 100% dynamique (masquage des heures vides), sauts de temps discrets et nouvelle échelle très aérée.<br>• 📏 <b>Tâches Absolues :</b> Taille strictement proportionnelle mathématiquement, hauteur minimale de sécurité et décalage intelligent anti-chevauchement.<br>• 🤏 <b>Drag & Drop 2.0 :</b> Appui long n'importe où, déploiement 24h dynamique, auto-scroll fluide et accroche magnétique (5 min).<br>• 📱 <b>Interface :</b> Espace maximisé, centrage auto de la date du jour, renommage en \"Base\", accès direct \"+ Tâche\" et suggestion d'heure arrondie."
+    },
+    {
         version: "1.8.0",
         title: "Planification Intuitive & Suivi",
         notes: "• ⚡ Planification : Glissez une tâche pour modifier son heure. L'ajout d'une tâche depuis le calendrier cible automatiquement la prochaine demi-heure. Heures de début/fin visibles sur les cartes.<br>• 🗓️ Navigation : Focus direct sur le jour actuel à l'ouverture du calendrier. Repositionnement de l'heure et bouton 'Aujourd'hui' toujours actif.<br>• ✅ Validation : Les tâches non terminées 24h après leur période de fin sont notifiées (avec option de retour dans la Base)."

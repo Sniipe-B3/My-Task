@@ -108,25 +108,51 @@ const App = {
         App.timeDragState = {
             active: false,
             startY: e.clientY || (e.touches && e.touches[0].clientY),
+            lastClientY: e.clientY || (e.touches && e.touches[0].clientY),
             startMinutes: h * 60 + m,
             id: id,
             type: type,
             parentId: parentId,
             card: card,
             timeDisplay: timeDisplay,
-            duration: item.duration || 15
+            duration: item.duration || 15,
+            scrollInterval: null,
+            scrollSpeed: 0
         };
 
         App.timeDragState.timeoutId = setTimeout(() => {
             if (App.timeDragState) {
+                let scrollArea = document.getElementById('timeline-scroll-area');
+                let oldScrollTop = scrollArea ? scrollArea.scrollTop : 0;
+                let oldVis = App.getVisibleHours(); // Récupère l'ancien état AVANT d'activer
+                let oldOffset = App.getTimeOffset(App.timeDragState.startMinutes, oldVis);
+                
                 App.timeDragState.active = true;
+                
                 if (navigator.vibrate) navigator.vibrate(50);
-                if (card) {
-                    card.style.transform = 'scale(0.98)';
-                    card.style.transition = 'none';
-                    card.style.zIndex = '50';
-                    card.style.position = 'relative';
-                }
+                
+                // Forcer le rendu avec tous les sauts de temps ouverts
+                App.render();
+                
+                requestAnimationFrame(() => {
+                    scrollArea = document.getElementById('timeline-scroll-area');
+                    let newVis = App.getVisibleHours(); // Devrait maintenant renvoyer 24h
+                    let newOffset = App.getTimeOffset(App.timeDragState.startMinutes, newVis);
+                    
+                    if (scrollArea) {
+                        let diff = newOffset - oldOffset;
+                        scrollArea.scrollTop = oldScrollTop + diff;
+                    }
+
+                    // Re-récupérer la carte fraîchement générée
+                    App.timeDragState.card = document.getElementById(`draggable-${App.timeDragState.id}`);
+                    if (App.timeDragState.card) {
+                        App.timeDragState.timeDisplay = App.timeDragState.card.querySelector('.task-time-display');
+                        App.timeDragState.card.style.transform = 'scale(0.98)';
+                        App.timeDragState.card.style.transition = 'none';
+                        App.timeDragState.card.style.zIndex = '50';
+                    }
+                });
             }
         }, 400);
     },
@@ -716,6 +742,70 @@ const App = {
             ${!isDone ? `<i data-lucide="chevron-right" class="w-5 h-5 text-gray-600"></i>` : ''}
         </div>`;
     },
+    getVisibleHours() {
+        if (App.timeDragState && App.timeDragState.active) {
+            let all = new Set();
+            for(let i=0; i<=24; i++) all.add(i);
+            return all;
+        }
+        let visible = new Set();
+        
+        // Add current hour if viewing today
+        if (AppState.selectedDate === getTodayString()) {
+            visible.add(new Date().getHours());
+        }
+        
+        let events = [...AppState.tasks.filter(t => t.scheduledDate === AppState.selectedDate),
+                      ...AppState.availabilities.filter(a => a.date === AppState.selectedDate)];
+        
+        events.forEach(ev => {
+            let start = 0, end = 0;
+            if (ev.type === 'slot' || ev.start) {
+                if (!ev.start) return;
+                start = parseInt(ev.start.split(':')[0])*60 + parseInt(ev.start.split(':')[1]);
+                end = start + ev.duration;
+            } else {
+                if(!ev.scheduledTime) return;
+                start = parseInt(ev.scheduledTime.split(':')[0])*60 + parseInt(ev.scheduledTime.split(':')[1]);
+                end = start + (ev.duration || 15);
+            }
+            let sh = Math.floor(start/60);
+            let eh = Math.floor(end/60) + 1;
+            for(let i=sh; i<=eh; i++) visible.add(i);
+        });
+        return visible;
+    },
+
+    getTimeOffset(minutes, visibleSet) {
+        let y = 0;
+        let targetHour = Math.floor(minutes / 60);
+        let targetMin = minutes % 60;
+        
+        for(let h=0; h < targetHour; h++) {
+            if(visibleSet.has(h)) y += 180;
+            else if(h === 0 || visibleSet.has(h-1)) y += 20; // gap marker
+        }
+        if (visibleSet.has(targetHour)) y += targetMin * 3;
+        else y += 10;
+        return y;
+    },
+    
+    getMinutesFromY(targetY, visibleSet) {
+        let currentY = 0;
+        for(let h=0; h<=24; h++) {
+            let hHeight = visibleSet.has(h) ? 180 : (h===0 || visibleSet.has(h-1) ? 20 : 0);
+            if (h === 24 && visibleSet.has(h)) hHeight = 0;
+            if (targetY >= currentY && targetY <= currentY + hHeight && hHeight > 0) {
+                if (visibleSet.has(h)) {
+                    let min = (targetY - currentY) / 3;
+                    return Math.max(0, Math.min(23*60+55, h * 60 + min));
+                }
+                return h * 60; // snapped to gap start
+            }
+            currentY += hHeight;
+        }
+        return 23*60 + 55;
+    },
 
     renderCalendar() {
         const priorityColors = {'Urgence':'text-red-400 border-red-500/30', 'Haute':'text-purple-400 border-purple-500/30','Moyenne':'text-amber-400 border-amber-500/30','Basse':'text-blue-400 border-blue-500/30'};
@@ -823,137 +913,120 @@ const App = {
             return timeA.localeCompare(timeB);
         });
 
-        // === DESCRIPTIF : TIMELINE RELATIVE AVEC GESTION DES SAUTS DE TEMPS ("...") ===
-        let timelineHtml = `<div class="relative space-y-3 mt-2 border-l border-gray-800 ml-10">`;
+        // === DESCRIPTIF : TIMELINE ABSOLUE AVEC GESTION DES SAUTS DE TEMPS ("...") ===
+        let visibleHours = this.getVisibleHours();
+        let totalTimelineHeight = this.getTimeOffset(24*60, visibleHours);
+        
+        let timelineHtml = `<div id="timeline-scroll-container" class="relative w-full" style="height: ${totalTimelineHeight}px; min-height: 200px;">`;
+        timelineHtml += `<div class="absolute left-10 top-0 bottom-0 border-l border-gray-800 z-0"></div>`;
+
+        // BUILD BACKGROUND GRID
+        let currentY = 0;
+        for (let h = 0; h <= 24; h++) {
+            if (visibleHours.has(h)) {
+                let label = `${String(h%24).padStart(2,'0')}:00`;
+                let hHeight = h === 24 ? 0 : 180;
+                timelineHtml += `<div class="absolute w-full border-t border-gray-800/40 z-0" style="top: ${currentY}px; height: ${hHeight}px;">
+                    <span class="absolute -top-2 left-0 text-[10px] font-black text-gray-500 w-10 text-center bg-[#1A1D24]">${label}</span>
+                </div>`;
+                currentY += hHeight;
+            } else {
+                if (h === 0 || visibleHours.has(h - 1)) {
+                    timelineHtml += `<div class="absolute w-full z-0" style="top: ${currentY}px; height: 20px;"></div>`;
+                    currentY += 20;
+                }
+            }
+        }
 
         const now = new Date();
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
         const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
         const isToday = AppState.selectedDate === getTodayString();
         
-        let timeLineDrawn = false;
-        let lastEndMin = null;
+        if (isToday) {
+            let nowY = this.getTimeOffset(currentMinutes, visibleHours);
+            timelineHtml += `
+            <div class="absolute left-0 w-full z-20 pointer-events-none" style="top: ${nowY}px;">
+                <span class="absolute left-0 w-10 text-[10px] font-black text-red-500 text-center bg-[#1A1D24]" style="margin-top: -7px;">${timeStr}</span>
+                <div class="absolute left-[36px] w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="margin-top: -4px;"></div>
+                <div class="absolute left-[40px] w-[calc(100%-40px)] h-px bg-red-500/50 z-20"></div>
+            </div>`;
+        }
 
-        if (dayEvents.length === 0) {
-            // S'il n'y a rien, on affiche juste l'heure si c'est aujourd'hui
-            if (isToday) {
-                timelineHtml += `
-                <div class="relative h-px mb-4 z-20">
-                    <span class="absolute -left-[48px] w-10 text-[10px] font-black text-red-500 text-right -top-2 bg-[#1A1D24] px-1 rounded z-30">${timeStr}</span>
-                    <div class="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="top: -4px;"></div>
-                </div>`;
-            }
-            timelineHtml += `<div class="py-10 text-center text-gray-500 text-sm font-semibold">Rien de prévu à cette date.</div>`;
+        // BUILD ABSOLUTE TASKS
+        if (dayEvents.length === 0 && !isToday) {
+            timelineHtml += `<div class="py-10 text-center text-gray-500 text-sm font-semibold relative z-10 ml-12">Rien de prévu à cette date.</div>`;
         } else {
+            // Group and Layout for overlap
+            let groups = [];
             dayEvents.forEach(ev => {
-                let startMin, endMin, duration;
+                let start = ev.type === 'slot' ? (parseInt(ev.start.split(':')[0])*60 + parseInt(ev.start.split(':')[1])) : 
+                            (ev.scheduledTime ? parseInt(ev.scheduledTime.split(':')[0])*60 + parseInt(ev.scheduledTime.split(':')[1]) : 0);
+                ev._startMin = start;
                 
-                // 1. Calcul du temps de l'événement
-                if (ev.type === 'task') {
-                    const [h, m] = (ev.scheduledTime || '23:59').split(':').map(Number);
-                    startMin = h * 60 + m;
-                    duration = ev.duration || 15;
-                    endMin = startMin + duration;
-                } else if (ev.type === 'slot') {
-                    const [h, m] = ev.start.split(':').map(Number);
-                    startMin = h * 60 + m;
-                    duration = ev.duration;
-                    endMin = startMin + duration;
-                }
-
-                // 2. Si c'est l'heure actuelle et qu'elle se trouve AVANT toutes les tâches
-                if (isToday && !timeLineDrawn && currentMinutes < startMin && (lastEndMin === null || currentMinutes >= lastEndMin)) {
-                    timelineHtml += `
-                    <div class="relative h-px mb-4 mt-2 z-20">
-                        <span class="absolute -left-[48px] w-10 text-[10px] font-black text-red-500 text-right -top-2 px-1 rounded z-30">${timeStr}</span>
-                        <div class="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="top: -4px;"></div>
-                    </div>`;
-                    timeLineDrawn = true;
-                }
-
-                // 3. LIGNE ROUGE TRAVERSANT UNE TÂCHE EN COURS
-                let inlineRedLine = '';
-                if (isToday && !timeLineDrawn && currentMinutes >= startMin && currentMinutes < endMin) {
-                    let progress = (currentMinutes - startMin) / duration;
-                    progress = Math.max(0.05, Math.min(0.95, progress)); 
-                    
-                    // Ajout de "left-0" au parent pour ignorer le padding et aligner le point rouge avec le point cyan. Suppression du fond sombre du texte.
-                    inlineRedLine = `
-                    <div class="absolute left-0 w-full z-20 pointer-events-none" style="top: ${progress * 100}%;">
-                        <span class="absolute -left-[48px] w-10 text-[10px] font-black text-red-500 text-right px-1 rounded z-30" style="margin-top: -8px;">${timeStr}</span>
-                        <div class="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="margin-top: -5px;"></div>
-                    </div>`;
-                    timeLineDrawn = true;
-                }
-
-                // 4. AFFICHAGE TÂCHES ET CRÉNEAUX
-                if (ev.type === 'task') {
-                    const isDone = ev.status === 'done';
-                    const startTimeDisp = ev.scheduledTime || '--:--';
-                    
-                    // Calcul de l'heure de fin au format HH:MM
-                    let endTimeDisp = '--:--';
-                    if (ev.scheduledTime) {
-                        const [startH, startM] = ev.scheduledTime.split(':').map(Number);
-                        let totalMins = startH * 60 + startM + (ev.duration || 15);
-                        let endH = Math.floor(totalMins / 60) % 24;
-                        let endM = totalMins % 60;
-                        endTimeDisp = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+                let placed = false;
+                for (let g of groups) {
+                    if (start < g.end + 10) { // overlap threshold
+                        g.events.push(ev);
+                        g.end = Math.max(g.end, start + (ev.duration || 30));
+                        placed = true;
+                        break;
                     }
-                    
-                    timelineHtml += `
-                    <div class="relative pl-5 pb-3 transition-colors border border-transparent flex flex-col" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'task', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
-                        <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-cyan-500 border border-[#0D0F12]'} z-10"></div>
-                        ${inlineRedLine}
-                        
-                        <div onpointerdown="App.startTaskTimeDrag(event, '${ev.isSubtask ? 'subtask' : 'task'}', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})" class="draggable-card bg-[#1A1D24] p-3 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} cursor-pointer hover:border-gray-700 transition-colors flex flex-col select-none" onclick="App.openMenu(event, '${ev.isSubtask ? 'subtask' : 'task'}', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
-                            <div class="flex justify-between items-start mb-1">
-                                <div class="flex items-center gap-2">
-                                    <button onpointerdown="event.stopPropagation()" onclick="event.stopPropagation(); ${ev.isSubtask ? `App.toggleSubtask('${ev.parentId}','${ev.id}')` : `App.toggleTask('${ev.id}')`}" class="p-1 -ml-1 text-gray-500 hover:text-emerald-400 focus:outline-none"><i data-lucide="${isDone ? 'check-circle-2' : 'circle'}" class="w-4 h-4 ${isDone ? 'text-emerald-500' : ''}"></i></button>
-                                    <span class="task-time-display text-xs font-black text-cyan-400 ${isDone ? 'text-gray-500 line-through' : ''}">${startTimeDisp} - ${endTimeDisp}</span>
-                                </div>
-                                <span class="px-1.5 py-0.5 rounded text-[8px] border bg-[#0D0F12] ${priorityColors[ev.priority || 'Moyenne']}">${ev.priority || 'Moyenne'}</span>
-                            </div>
-                            <h4 class="text-sm font-bold text-white ${isDone ? 'line-through text-gray-500' : ''} ml-1">${ev.name}</h4>
-                            <div class="flex items-center gap-2 mt-1.5 text-[10px] text-gray-500 ml-1">
-                                <span><i data-lucide="clock" class="w-3 h-3 inline"></i> ${ev.duration}m</span>
-                                ${ev.locations && ev.locations.length > 0 ? `<span class="text-emerald-400"><i data-lucide="map-pin" class="w-3 h-3 inline"></i> ${ev.locations.join(', ')}</span>` : ''}
-                                ${ev.note && ev.note.trim() !== '' ? `<span onclick="App.openNote('task', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'}); event.stopPropagation();" class="text-amber-400 cursor-pointer bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 hover:bg-amber-500/20"><i data-lucide="file-text" class="w-3 h-3 inline"></i></span>` : ''}
-                            </div>
-                            ${ev.isSubtask && ev.parentName ? `<div class="text-[9px] text-indigo-400/70 font-semibold mt-1 ml-1"><i data-lucide="corner-down-right" class="w-3 h-3 inline"></i> ${ev.parentName}</div>` : ''}
-                        </div>
-                    </div>`;
-                } else if (ev.type === 'slot') {
-                    timelineHtml += `
-                    <div class="relative pl-5 pb-3 transition-colors border border-transparent flex flex-col" ondragover="App.handleCalDragOver(event)" ondragleave="App.handleCalDragLeave(event)" ondrop="App.handleCalDrop(event, 'slot', '${ev.id}')">
-                        <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full bg-indigo-500 border border-[#0D0F12] animate-pulse z-10"></div>
-                        ${inlineRedLine}
-                        
-                        <div onpointerdown="App.startTaskTimeDrag(event, 'slot', '${ev.id}')" class="draggable-card bg-indigo-500/10 p-3 rounded-2xl border border-indigo-500/30 flex flex-col justify-between select-none">
-                            <div>
-                                <div class="flex justify-between items-start mb-2">
-                                    <span class="task-time-display text-xs font-black text-indigo-400">${ev.start} - ${ev.end}</span>
-                                    <button onpointerdown="event.stopPropagation()" onclick="App.removeAvailability('${ev.id}')" class="text-gray-500 hover:text-red-400"><i data-lucide="x" class="w-4 h-4"></i></button>
-                                </div>
-                                <div class="text-[10px] text-indigo-300/70 font-semibold mb-2">Créneau libre (${ev.duration}m)</div>
-                                ${ev.locations && ev.locations.length > 0 ? `<div class="text-[10px] text-emerald-400 font-semibold mt-1"><i data-lucide="map-pin" class="w-3 h-3 inline"></i> ${ev.locations.join(', ')}</div>` : ''}
-                            </div>
-                            <div class="flex justify-end mt-auto pt-2"><button onclick="App.fillAvailability('${ev.id}')" class="bg-indigo-500 text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase shadow-[0_0_10px_rgba(99,102,241,0.4)] hover:bg-indigo-400 transition-colors">Auto-Remplir</button></div>
-                        </div>
-                    </div>`;
                 }
-
-                lastEndMin = endMin;
+                if (!placed) groups.push({ start: start, end: start + (ev.duration || 30), events: [ev] });
             });
 
-            // 8. Ligne rouge si l'heure actuelle est APRÈS toutes les tâches
-            if (isToday && !timeLineDrawn && currentMinutes > lastEndMin) {
-                timelineHtml += `
-                <div class="relative h-px mb-4 mt-2 z-20">
-                    <span class="absolute -left-[48px] w-10 text-[10px] font-black text-red-500 text-right -top-2 px-1 rounded z-30">${timeStr}</span>
-                    <div class="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="top: -4px;"></div>
-                </div>`;
-            }
+            groups.forEach(g => {
+                g.events.forEach((ev, idx) => {
+                    let y = this.getTimeOffset(ev._startMin, visibleHours);
+                    let leftBase = 46;
+                    let leftOffset = leftBase + (idx * 16); // cascade offset
+                    let widthStr = `calc(100% - ${leftOffset}px - 4px)`;
+                    
+                    if (ev.type === 'task') {
+                        let duration = ev.duration || 15;
+                        let heightStr = `height: ${Math.max(duration * 3, 50)}px;`;
+                        
+                        const isDone = ev.status === 'done';
+                        const startTimeDisp = ev.scheduledTime || '--:--';
+                        let endTimeDisp = '--:--';
+                        if (ev.scheduledTime) {
+                            let totalMins = ev._startMin + duration;
+                            endTimeDisp = `${String(Math.floor(totalMins/60)%24).padStart(2, '0')}:${String(totalMins%60).padStart(2, '0')}`;
+                        }
+                        
+                        timelineHtml += `
+                        <div id="draggable-${ev.id}" class="absolute z-10 transition-transform" style="top: ${y}px; left: ${leftOffset}px; width: ${widthStr}; ${heightStr}">
+                            <div onpointerdown="App.startTaskTimeDrag(event, '${ev.isSubtask ? 'subtask' : 'task'}', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})" class="draggable-card h-full bg-[#1A1D24] p-2.5 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} cursor-pointer hover:border-gray-700 transition-colors flex flex-col select-none shadow-lg overflow-hidden" onclick="App.openMenu(event, '${ev.isSubtask ? 'subtask' : 'task'}', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
+                                <div class="flex justify-between items-start mb-1 shrink-0">
+                                    <div class="flex items-center gap-2">
+                                        <button onpointerdown="event.stopPropagation()" onclick="event.stopPropagation(); ${ev.isSubtask ? `App.toggleSubtask('${ev.parentId}','${ev.id}')` : `App.toggleTask('${ev.id}')`}" class="p-1 -ml-1 text-gray-500 hover:text-emerald-400 focus:outline-none"><i data-lucide="${isDone ? 'check-circle-2' : 'circle'}" class="w-4 h-4 ${isDone ? 'text-emerald-500' : ''}"></i></button>
+                                        <span class="task-time-display text-[11px] font-black text-cyan-400 ${isDone ? 'text-gray-500 line-through' : ''}">${startTimeDisp} - ${endTimeDisp}</span>
+                                    </div>
+                                    <span class="px-1.5 py-0.5 rounded text-[8px] border bg-[#0D0F12] ${priorityColors[ev.priority || 'Moyenne']} shrink-0">${ev.priority || 'Moyenne'}</span>
+                                </div>
+                                <h4 class="text-sm font-bold text-white ${isDone ? 'line-through text-gray-500' : ''} ml-1 truncate shrink-0">${ev.name}</h4>
+                                <div class="flex items-center gap-2 mt-1.5 text-[10px] text-gray-500 ml-1 truncate shrink-0">
+                                    <span><i data-lucide="clock" class="w-3 h-3 inline"></i> ${duration}m</span>
+                                    ${ev.locations && ev.locations.length > 0 ? `<span class="text-emerald-400 truncate"><i data-lucide="map-pin" class="w-3 h-3 inline"></i> ${ev.locations.join(', ')}</span>` : ''}
+                                </div>
+                            </div>
+                        </div>`;
+                    } else if (ev.type === 'slot') {
+                        let heightStr = `height: ${Math.max(ev.duration * 3, 40)}px;`;
+                        timelineHtml += `
+                        <div id="draggable-${ev.id}" class="absolute z-10 transition-transform" style="top: ${y}px; left: ${leftOffset}px; width: ${widthStr}; ${heightStr}">
+                            <div onpointerdown="App.startTaskTimeDrag(event, 'slot', '${ev.id}')" class="draggable-card h-full bg-indigo-500/10 p-2.5 rounded-2xl border border-indigo-500/30 flex flex-col select-none shadow-lg overflow-hidden">
+                                <div class="flex justify-between items-start mb-1 shrink-0">
+                                    <span class="task-time-display text-[11px] font-black text-indigo-400">${ev.start} - ${ev.end}</span>
+                                    <button onpointerdown="event.stopPropagation()" onclick="App.removeAvailability('${ev.id}')" class="text-gray-500 hover:text-red-400"><i data-lucide="x" class="w-4 h-4"></i></button>
+                                </div>
+                                <div class="text-[10px] text-indigo-300/70 font-semibold shrink-0">Créneau libre (${ev.duration}m)</div>
+                            </div>
+                        </div>`;
+                    }
+                });
+            });
         }
         timelineHtml += `</div>`;
 
@@ -973,7 +1046,7 @@ const App = {
             <div class="shrink-0 mb-4">
                 ${datesHtml}
             </div>
-            <div class="bg-[#1A1D24] rounded-3xl border border-gray-800 shadow-xl flex-1 overflow-y-auto no-scrollbar relative px-4 pb-4">
+            <div id="timeline-scroll-area" class="bg-[#1A1D24] rounded-3xl border border-gray-800 shadow-xl flex-1 overflow-y-auto no-scrollbar relative px-4 pb-4">
                 <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 border-b border-gray-800 pb-2 pt-4 sticky top-0 bg-[#1A1D24] z-40">Timeline</h3>
                 ${timelineHtml}
             </div>
@@ -1446,6 +1519,7 @@ const App = {
                     if (App.timeDragState) {
                         const currentY = e.clientY || (e.touches && e.touches[0].clientY);
                         const deltaY = currentY - App.timeDragState.startY;
+                        App.timeDragState.lastClientY = currentY;
                         
                         if (!App.timeDragState.active) {
                             if (Math.abs(deltaY) > 5 && App.timeDragState.timeoutId) {
@@ -1455,45 +1529,82 @@ const App = {
                             return;
                         }
 
-                        let deltaMins = Math.round(deltaY / 2);
-                        let rawMinutes = App.timeDragState.startMinutes + deltaMins;
-                        let newMinutes = Math.round(rawMinutes / 5) * 5;
-                        newMinutes = Math.max(0, Math.min(23 * 60 + 55, newMinutes));
-                        
-                        const newH = Math.floor(newMinutes / 60);
-                        const newM = newMinutes % 60;
-                        const timeStr = `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
-                        
-                        if (App.timeDragState.timeDisplay) {
-                            let endMinutes = newMinutes + App.timeDragState.duration;
-                            let endH = Math.floor(endMinutes / 60) % 24;
-                            let endM = endMinutes % 60;
-                            const endStr = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
-                            App.timeDragState.timeDisplay.textContent = `${timeStr} - ${endStr}`;
-                            App.timeDragState.timeDisplay.classList.add('text-red-400');
+                        let scrollArea = document.getElementById('timeline-scroll-area');
+                        if (!scrollArea) return;
+
+                        // Auto-scroll aux bords
+                        let rect = scrollArea.getBoundingClientRect();
+                        let edge = 60;
+                        if (currentY < rect.top + edge) {
+                            App.timeDragState.scrollSpeed = -6;
+                        } else if (currentY > rect.bottom - edge) {
+                            App.timeDragState.scrollSpeed = 6;
+                        } else {
+                            App.timeDragState.scrollSpeed = 0;
                         }
-                        
-                        if (App.timeDragState.card) {
-                            App.timeDragState.card.style.transform = `translateY(${deltaY}px) scale(0.98)`;
+
+                        if (App.timeDragState.scrollSpeed !== 0 && !App.timeDragState.scrollInterval) {
+                            App.timeDragState.scrollInterval = setInterval(() => {
+                                if (!App.timeDragState || !App.timeDragState.active) return;
+                                let cont = document.getElementById('timeline-scroll-area');
+                                if (cont) {
+                                    cont.scrollTop += App.timeDragState.scrollSpeed;
+                                    App.updateDragPosition();
+                                }
+                            }, 16);
+                        } else if (App.timeDragState.scrollSpeed === 0 && App.timeDragState.scrollInterval) {
+                            clearInterval(App.timeDragState.scrollInterval);
+                            App.timeDragState.scrollInterval = null;
                         }
+
+                        App.updateDragPosition();
                     }
                 });
+
+                App.updateDragPosition = () => {
+                    if (!App.timeDragState || !App.timeDragState.active) return;
+                    let innerContainer = document.getElementById('timeline-scroll-container');
+                    if (!innerContainer) return;
+                    let innerRect = innerContainer.getBoundingClientRect();
+                    
+                    let pointerYInContainer = App.timeDragState.lastClientY - innerRect.top;
+                    let visibleHours = App.getVisibleHours(); // Ce sera toutes les heures
+                    
+                    let newMinutes = App.getMinutesFromY(pointerYInContainer, visibleHours);
+                    newMinutes = Math.round(newMinutes / 5) * 5; // snap 5 min
+                    
+                    const newH = Math.floor(newMinutes / 60);
+                    const newM = newMinutes % 60;
+                    const timeStr = `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+                    
+                    App.timeDragState.currentMinutes = newMinutes; // stocké pour endDrag
+
+                    if (App.timeDragState.timeDisplay) {
+                        let endMinutes = newMinutes + App.timeDragState.duration;
+                        let endH = Math.floor(endMinutes / 60) % 24;
+                        let endM = endMinutes % 60;
+                        const endStr = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+                        App.timeDragState.timeDisplay.textContent = `${timeStr} - ${endStr}`;
+                        App.timeDragState.timeDisplay.classList.add('text-red-400');
+                    }
+                    
+                    if (App.timeDragState.card) {
+                        let y = App.getTimeOffset(newMinutes, visibleHours);
+                        App.timeDragState.card.style.top = `${y}px`;
+                    }
+                };
 
                 const endDrag = (e) => {
                     if (App.timeDragState) {
                         if (App.timeDragState.timeoutId) {
                             clearTimeout(App.timeDragState.timeoutId);
                         }
+                        if (App.timeDragState.scrollInterval) {
+                            clearInterval(App.timeDragState.scrollInterval);
+                        }
                         
                         if (App.timeDragState.active) {
-                            const currentY = e.clientY || (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientY : App.timeDragState.startY);
-                            const deltaY = currentY - App.timeDragState.startY;
-                            
-                            let deltaMins = Math.round(deltaY / 2);
-                            let rawMinutes = App.timeDragState.startMinutes + deltaMins;
-                            let newMinutes = Math.round(rawMinutes / 5) * 5;
-                            newMinutes = Math.max(0, Math.min(23 * 60 + 55, newMinutes));
-                            
+                            let newMinutes = App.timeDragState.currentMinutes || App.timeDragState.startMinutes;
                             const newH = Math.floor(newMinutes / 60);
                             const newM = newMinutes % 60;
                             const timeStr = `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
@@ -1519,8 +1630,9 @@ const App = {
                                 App.wasDragged = true;
                                 setTimeout(() => { App.wasDragged = false; }, 100);
                                 App.saveToCloud();
-                                App.render();
                             }
+                            App.timeDragState.active = false;
+                            App.render();
                         }
                         App.timeDragState = null;
                     }
