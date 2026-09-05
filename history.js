@@ -3,6 +3,11 @@
 // ==========================================
 export const RELEASE_HISTORY = [
     {
+        version: "1.8.2",
+        title: "Affichage Calendrier Empilé & Épuré",
+        notes: "• 🥞 <b>Empilement Intelligent :</b> Fini les tâches qui se chevauchent illisiblement ou en colonnes ! Les tâches simultanées s'empilent désormais verticalement et prennent toute la largeur, triées par priorité puis par durée.<br>• ⏱️ <b>Heures Épurées :</b> Pour alléger visuellement le calendrier, seul le début et la fin d'un bloc de tâches empilées affichent leur heure. Les heures individuelles de chaque tâche réapparaissent temporairement lorsqu'on les déplace."
+    },
+    {
         version: "1.8.1.2",
         title: "Fluidité et Proportions",
         notes: "• 🧈 <b>Glisser-déposer 1:1 :</b> Suivi parfait du doigt au pixel près et actualisation des heures en direct.<br>• 📉 <b>Échelle intelligente :</b> Hauteur minimale garantie pour les petites tâches, et compression visuelle des blocs très longs (ex: 5h)."

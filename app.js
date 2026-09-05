@@ -138,6 +138,11 @@ const App = {
                 if (App.timeDragState.wrapper) {
                     App.timeDragState.wrapper.style.zIndex = '50';
                     App.timeDragState.wrapper.style.transition = 'none';
+                    
+                    let bStart = App.timeDragState.wrapper.querySelector('.task-boundary-start');
+                    let bEnd = App.timeDragState.wrapper.querySelector('.task-boundary-end');
+                    if (bStart) bStart.classList.remove('hidden');
+                    if (bEnd) bEnd.classList.remove('hidden');
                 }
                 
                 if (App.timeDragState.card) {
@@ -801,11 +806,12 @@ const App = {
             let intv = intervals[i];
             
             if (intv.start > lastEnd) {
+                let emptyMins = intv.start - lastEnd;
+                let emptyPx = emptyMins / 5;
                 if (minutes >= lastEnd && minutes < intv.start) {
-                    let progress = (minutes - lastEnd) / (intv.start - lastEnd);
-                    return y + 20 * progress;
+                    return y + (minutes - lastEnd) / 5;
                 }
-                y += 20; 
+                y += emptyPx; 
             }
             
             if (minutes <= intv.end) {
@@ -817,8 +823,7 @@ const App = {
         }
         
         if (minutes > lastEnd) {
-            let progress = Math.min(1, (minutes - lastEnd) / (24*60 - lastEnd));
-            return y + 100 * progress;
+            return y + (minutes - lastEnd) / 5;
         }
         
         return y;
@@ -833,11 +838,12 @@ const App = {
             let intv = intervals[i];
             
             if (intv.start > lastEnd) {
-                if (targetY >= currentY && targetY < currentY + 20) {
-                    let progress = (targetY - currentY) / 20;
-                    return lastEnd + (intv.start - lastEnd) * progress;
+                let emptyMins = intv.start - lastEnd;
+                let emptyPx = emptyMins / 5;
+                if (targetY >= currentY && targetY < currentY + emptyPx) {
+                    return lastEnd + (targetY - currentY) * 5;
                 }
-                currentY += 20;
+                currentY += emptyPx;
             }
             
             let hHeight = this.mapMinsToPixels(intv.end - intv.start);
@@ -851,8 +857,7 @@ const App = {
         }
         
         if (targetY > currentY) {
-             let progress = Math.min(1, (targetY - currentY) / 100);
-             return lastEnd + ((24*60) - lastEnd) * progress;
+            return lastEnd + (targetY - currentY) * 5;
         }
         return lastEnd;
     },
@@ -889,7 +894,7 @@ const App = {
         let totalTimelineHeight = this.getTimeOffset(24*60, activeIntervals);
         
         let timelineHtml = `<div id="timeline-scroll-container" class="relative w-full" style="height: ${totalTimelineHeight}px; min-height: 200px;">`;
-        timelineHtml += `<div class="absolute left-10 top-0 bottom-0 border-l border-gray-800 z-0"></div>`;
+        timelineHtml += `<div class="absolute top-0 bottom-0 border-l border-gray-800 z-0" style="left: 44px;"></div>`;
         
 
         const priorityColors = {'Urgence':'text-red-400 border-red-500/30', 'Haute':'text-purple-400 border-purple-500/30','Moyenne':'text-amber-400 border-amber-500/30','Basse':'text-blue-400 border-blue-500/30'};
@@ -973,12 +978,12 @@ const App = {
             let nowY = this.getTimeOffset(currentMinutes, activeIntervals);
             timelineHtml += `
             <div class="absolute left-0 w-full z-20 pointer-events-none" style="top: ${nowY}px;">
-                <span class="absolute left-0 w-10 text-[10px] font-black text-red-500 text-center bg-[#1A1D24]" style="margin-top: -7px;">${timeStr}</span>
-                <div class="absolute left-[36px] w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30" style="margin-top: -4px;"></div>
-                <div class="absolute left-[40px] w-[calc(100%-40px)] h-px bg-red-500/50 z-20"></div>
+                <span class="absolute -top-2 left-0 text-[10px] font-black text-red-500 text-right whitespace-nowrap bg-[#1A1D24] pr-1.5" style="width: 40px;">${timeStr}</span>
+                <div class="absolute left-[40px] -top-1 w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-30"></div>
             </div>`;
         }
 
+        let lastGroupEndY = 0;
         if (dayEvents.length === 0 && !isToday) {
             timelineHtml += `<div class="py-10 text-center text-gray-500 text-sm font-semibold relative z-10 ml-12">Rien de prévu à cette date.</div>`;
         } else {
@@ -999,13 +1004,34 @@ const App = {
                 }
                 if (!placed) groups.push({ start: start, end: start + (ev.duration || 30), events: [ev] });
             });
-
+            
             groups.forEach(g => {
+                const priorityWeight = { 'Urgence': 4, 'Haute': 3, 'Moyenne': 2, 'Basse': 1 };
+                g.events.sort((a, b) => {
+                    let wA = priorityWeight[a.priority || 'Moyenne'] || 2;
+                    let wB = priorityWeight[b.priority || 'Moyenne'] || 2;
+                    if (wA !== wB) return wB - wA; 
+                    
+                    let durA = a.duration || (a.type === 'slot' ? 60 : 15);
+                    let durB = b.duration || (b.type === 'slot' ? 60 : 15);
+                    return durA - durB; 
+                });
+
+                let expectedY = this.getTimeOffset(g.start, activeIntervals);
+                let currentY = Math.max(expectedY, lastGroupEndY > 0 ? lastGroupEndY + 10 : 0);
+
+                let startDisp = `${String(Math.floor(g.start/60)%24).padStart(2,'0')}:${String(g.start%60).padStart(2,'0')}`;
+                
+                timelineHtml += `
+                <div class="absolute border-t border-gray-800/40 pointer-events-none z-0" style="top: ${currentY}px; left: 0px; width: 100vw;">
+                    <span class="absolute -top-2 left-0 text-[10px] font-black text-gray-400 text-right whitespace-nowrap bg-[#1A1D24] pr-1.5" style="width: 40px;">${startDisp}</span>
+                </div>`;
+
                 g.events.forEach((ev, idx) => {
-                    let y = this.getTimeOffset(ev._startMin, activeIntervals);
-                    let leftBase = 46;
-                    let leftOffset = leftBase + (idx * 16); 
-                    let widthStr = `calc(100% - ${leftOffset}px - 4px)`;
+                    let y = currentY;
+                    let widthStr = `calc(100% - 54px)`;
+                    let leftOffsetStr = `50px`;
+                    let inverseLeftStr = `-50px`;
                     
                     if (ev.type === 'task') {
                         let duration = ev.duration || 15;
@@ -1020,12 +1046,12 @@ const App = {
                         }
                         
                         timelineHtml += `
-                        <div id="draggable-${ev.id}" class="absolute z-10 transition-transform" style="top: ${y}px; left: ${leftOffset}px; width: ${widthStr}; ${heightStr}">
-                            <div class="task-boundary-start absolute border-t border-gray-800/40 pointer-events-none z-[-1]" style="top: 0px; left: -${leftOffset}px; width: 100vw;">
-                                <span class="task-boundary-label-start absolute -top-2 left-0 text-[10px] font-black text-gray-400 w-10 text-center bg-[#1A1D24]">${startTimeDisp}</span>
+                        <div id="draggable-${ev.id}" class="absolute z-10 transition-transform" style="top: ${y}px; left: ${leftOffsetStr}; width: ${widthStr}; ${heightStr}">
+                            <div class="task-boundary-start absolute border-t border-cyan-500/50 pointer-events-none z-[-1] hidden" style="top: 0px; left: ${inverseLeftStr}; width: 100vw;">
+                                <span class="task-boundary-label-start absolute -top-2 left-0 text-[10px] font-black text-cyan-400 text-right whitespace-nowrap bg-[#1A1D24] pr-1.5" style="width: 40px;">${startTimeDisp}</span>
                             </div>
-                            <div class="task-boundary-end absolute border-t border-gray-800/40 pointer-events-none z-[-1]" style="top: ${App.mapMinsToPixels(duration)}px; left: -${leftOffset}px; width: 100vw;">
-                                <span class="task-boundary-label-end absolute -top-2 left-0 text-[10px] font-black text-gray-400 w-10 text-center bg-[#1A1D24]">${endTimeDisp}</span>
+                            <div class="task-boundary-end absolute border-t border-cyan-500/50 pointer-events-none z-[-1] hidden" style="top: ${App.mapMinsToPixels(duration)}px; left: ${inverseLeftStr}; width: 100vw;">
+                                <span class="task-boundary-label-end absolute -top-2 left-0 text-[10px] font-black text-cyan-400 text-right whitespace-nowrap bg-[#1A1D24] pr-1.5" style="width: 40px;">${endTimeDisp}</span>
                             </div>
                             <div onpointerdown="App.startTaskTimeDrag(event, '${ev.isSubtask ? 'subtask' : 'task'}', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})" class="draggable-card h-full bg-[#1A1D24] p-2.5 rounded-2xl border ${isDone ? 'border-gray-800/50 opacity-60' : 'border-gray-800'} cursor-pointer hover:border-gray-700 transition-colors flex flex-col select-none shadow-lg overflow-hidden" onclick="App.openMenu(event, '${ev.isSubtask ? 'subtask' : 'task'}', '${ev.id}', ${ev.isSubtask ? `'${ev.parentId}'` : 'null'})">
                                 <div class="flex justify-between items-start mb-1 shrink-0">
@@ -1045,12 +1071,12 @@ const App = {
                     } else if (ev.type === 'slot') {
                         let heightStr = `height: ${Math.max(App.mapMinsToPixels(ev.duration), 70)}px;`;
                         timelineHtml += `
-                        <div id="draggable-${ev.id}" class="absolute z-10 transition-transform" style="top: ${y}px; left: ${leftOffset}px; width: ${widthStr}; ${heightStr}">
-                            <div class="task-boundary-start absolute border-t border-gray-800/40 pointer-events-none z-[-1]" style="top: 0px; left: -${leftOffset}px; width: 100vw;">
-                                <span class="task-boundary-label-start absolute -top-2 left-0 text-[10px] font-black text-gray-400 w-10 text-center bg-[#1A1D24]">${ev.start}</span>
+                        <div id="draggable-${ev.id}" class="absolute z-10 transition-transform" style="top: ${y}px; left: ${leftOffsetStr}; width: ${widthStr}; ${heightStr}">
+                            <div class="task-boundary-start absolute border-t border-cyan-500/50 pointer-events-none z-[-1] hidden" style="top: 0px; left: ${inverseLeftStr}; width: 100vw;">
+                                <span class="task-boundary-label-start absolute -top-2 left-0 text-[10px] font-black text-cyan-400 text-right whitespace-nowrap bg-[#1A1D24] pr-1.5" style="width: 40px;">${ev.start}</span>
                             </div>
-                            <div class="task-boundary-end absolute border-t border-gray-800/40 pointer-events-none z-[-1]" style="top: ${App.mapMinsToPixels(ev.duration)}px; left: -${leftOffset}px; width: 100vw;">
-                                <span class="task-boundary-label-end absolute -top-2 left-0 text-[10px] font-black text-gray-400 w-10 text-center bg-[#1A1D24]">${ev.end}</span>
+                            <div class="task-boundary-end absolute border-t border-cyan-500/50 pointer-events-none z-[-1] hidden" style="top: ${App.mapMinsToPixels(ev.duration)}px; left: ${inverseLeftStr}; width: 100vw;">
+                                <span class="task-boundary-label-end absolute -top-2 left-0 text-[10px] font-black text-cyan-400 text-right whitespace-nowrap bg-[#1A1D24] pr-1.5" style="width: 40px;">${ev.end}</span>
                             </div>
                             <div onpointerdown="App.startTaskTimeDrag(event, 'slot', '${ev.id}')" class="draggable-card h-full bg-indigo-500/10 p-2.5 rounded-2xl border border-indigo-500/30 flex flex-col select-none shadow-lg overflow-hidden">
                                 <div class="flex justify-between items-start mb-1 shrink-0">
@@ -1061,9 +1087,26 @@ const App = {
                             </div>
                         </div>`;
                     }
+                    
+                    let itemHeightPx = 0;
+                    if (ev.type === 'task') {
+                        itemHeightPx = Math.max(App.mapMinsToPixels(ev.duration || 15), 90);
+                    } else if (ev.type === 'slot') {
+                        itemHeightPx = Math.max(App.mapMinsToPixels(ev.duration), 70);
+                    }
+                    currentY += itemHeightPx + 4; // 4px visual gap between stacked items
                 });
+                lastGroupEndY = currentY;
+                
+                let endDisp = `${String(Math.floor(g.end/60)%24).padStart(2,'0')}:${String(g.end%60).padStart(2,'0')}`;
+                timelineHtml += `
+                <div class="absolute border-t border-gray-800/40 pointer-events-none z-0" style="top: ${lastGroupEndY}px; left: 0px; width: 100vw;">
+                    <span class="absolute -top-2 left-0 text-[10px] font-black text-gray-400 text-right whitespace-nowrap bg-[#1A1D24] pr-1.5" style="width: 40px;">${endDisp}</span>
+                </div>`;
             });
         }
+        
+        timelineHtml += `<div style="position: absolute; top: ${Math.max(totalTimelineHeight, lastGroupEndY + 50)}px; width: 1px; height: 1px;"></div>`;
         timelineHtml += `</div>`;
 
         return `
@@ -1082,8 +1125,8 @@ const App = {
             <div class="shrink-0 mb-4">
                 ${datesHtml}
             </div>
-            <div id="timeline-scroll-area" class="bg-[#1A1D24] rounded-3xl border border-gray-800 shadow-xl flex-1 overflow-y-auto no-scrollbar relative px-4 pb-4">
-                <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 border-b border-gray-800 pb-2 pt-4 sticky top-0 bg-[#1A1D24] z-40">Timeline</h3>
+            <div id="timeline-scroll-area" class="bg-[#1A1D24] rounded-3xl border border-gray-800 shadow-xl flex-1 overflow-y-auto no-scrollbar relative pl-2 pr-3 pb-4">
+                <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 border-b border-gray-800 pb-2 pt-4 sticky top-0 bg-[#1A1D24] z-40 px-2">Timeline</h3>
                 ${timelineHtml}
             </div>
         </div>`;
